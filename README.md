@@ -43,7 +43,8 @@ Works with any MCP server reachable over stdio — including servers written in 
 
 ## Relationship to official tooling
 
-The official [modelcontextprotocol/conformance](https://github.com/modelcontextprotocol/conformance) suite validates protocol-level compliance as a CLI/Action. This project is the **test-framework layer for JVM developers**: it lives inside your JUnit test suite, runs on every `mvn test`, and adds project-specific contract and regression testing that a generic conformance runner cannot know about. Use both.
+- The official [conformance](https://github.com/modelcontextprotocol/conformance) suite validates protocol compliance as a CLI/GitHub Action. This project is the **JUnit-native layer**: it runs inside `mvn test` on every build and adds project-specific contract and regression checks a generic runner cannot know about. Use both.
+- The official [java-sdk](https://github.com/modelcontextprotocol/java-sdk) publishes `mcp-test`, the shared fixtures its own integration tests use. Those are tied to the SDK and its spec revision (2025-11-25 as of java-sdk 2.0.0, Tier 2). `mcp-java-testkit` speaks the stdio wire protocol directly, so it can test servers built on **any** SDK — or any language — and check newer spec revisions (2026-07-28) before Tier-2 SDKs catch up.
 
 ## License
 
