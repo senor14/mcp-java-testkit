@@ -9,6 +9,10 @@ updates:
       # keeps it usable from every JUnit 5 project.
       - dependency-name: "org.junit.jupiter:*"
         update-types: ["version-update:semver-major"]
+      # Spring Boot 4 is incompatible with the JDK 17 CI baseline; the Boot test
+      # dependency stays on 3.x while the library targets Java 17+.
+      - dependency-name: "org.springframework.boot:*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
