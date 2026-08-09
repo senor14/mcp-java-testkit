@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (0.4.0)
+## 0.4.0 — 2026-08-09
 
 Closes the protocol-coverage gaps beyond tools:
 
