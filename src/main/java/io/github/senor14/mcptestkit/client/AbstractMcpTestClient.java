@@ -6,14 +6,16 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.senor14.mcptestkit.McpTestClient;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * MCP protocol flow shared by all transports: the initialize handshake, paginated
- * {@code tools/list}, and {@code tools/call}. Subclasses supply the wire transport by
- * implementing {@link #request(String, ObjectNode)} and {@link #sendNotification(String)}.
+ * MCP protocol flow shared by all transports: the initialize handshake, the paginated
+ * list operations, calls, and raw exchanges. Subclasses supply the wire transport by
+ * implementing {@link #performRequest(long, String, ObjectNode)} and
+ * {@link #sendNotification(String)}.
  */
 public abstract class AbstractMcpTestClient implements McpTestClient {
 
@@ -24,14 +26,20 @@ public abstract class AbstractMcpTestClient implements McpTestClient {
 
     protected final AtomicLong idSequence = new AtomicLong();
 
+    /** Server-initiated notifications, appended by transports as they observe them. */
+    protected final List<JsonNode> receivedNotifications = Collections.synchronizedList(new ArrayList<>());
+
     private boolean initialized;
     private String serverName = "";
     private String serverVersion = "";
     private String protocolVersion = "";
     private JsonNode serverCapabilities = MAPPER.createObjectNode();
 
-    /** Sends a JSON-RPC request over the transport and returns the {@code result} node. */
-    protected abstract JsonNode request(String method, ObjectNode params);
+    /**
+     * Sends a JSON-RPC request over the transport and returns the <em>full response
+     * envelope</em> (containing {@code result} or {@code error}).
+     */
+    protected abstract JsonNode performRequest(long id, String method, ObjectNode params);
 
     /** Sends a JSON-RPC notification over the transport. */
     protected abstract void sendNotification(String method);
@@ -42,7 +50,7 @@ public abstract class AbstractMcpTestClient implements McpTestClient {
         params.set("capabilities", MAPPER.createObjectNode());
         ObjectNode clientInfo = params.putObject("clientInfo");
         clientInfo.put("name", "mcp-java-testkit");
-        clientInfo.put("version", "0.2.0");
+        clientInfo.put("version", "0.4.0");
 
         JsonNode result = request("initialize", params);
         protocolVersion = result.path("protocolVersion").asText("");
@@ -82,18 +90,7 @@ public abstract class AbstractMcpTestClient implements McpTestClient {
 
     @Override
     public final List<JsonNode> listTools() {
-        List<JsonNode> tools = new ArrayList<>();
-        String cursor = null;
-        do {
-            ObjectNode params = MAPPER.createObjectNode();
-            if (cursor != null) {
-                params.put("cursor", cursor);
-            }
-            JsonNode result = request("tools/list", params);
-            result.path("tools").forEach(tools::add);
-            cursor = result.hasNonNull("nextCursor") ? result.get("nextCursor").asText() : null;
-        } while (cursor != null);
-        return tools;
+        return paginatedList("tools/list", "tools");
     }
 
     @Override
@@ -109,7 +106,77 @@ public abstract class AbstractMcpTestClient implements McpTestClient {
         return request("tools/call", params);
     }
 
-    /** Builds a JSON-RPC request envelope with a fresh id. */
+    @Override
+    public final List<JsonNode> listResources() {
+        return paginatedList("resources/list", "resources");
+    }
+
+    @Override
+    public final List<JsonNode> listResourceTemplates() {
+        return paginatedList("resources/templates/list", "resourceTemplates");
+    }
+
+    @Override
+    public final JsonNode readResource(String uri) {
+        ObjectNode params = MAPPER.createObjectNode();
+        params.put("uri", uri);
+        return request("resources/read", params);
+    }
+
+    @Override
+    public final List<JsonNode> listPrompts() {
+        return paginatedList("prompts/list", "prompts");
+    }
+
+    @Override
+    public final JsonNode getPrompt(String name, Map<String, Object> arguments) {
+        ObjectNode params = MAPPER.createObjectNode();
+        params.put("name", name);
+        params.set("arguments", MAPPER.valueToTree(arguments));
+        return request("prompts/get", params);
+    }
+
+    @Override
+    public final JsonNode exchange(String method, JsonNode params) {
+        ObjectNode paramsNode = params != null && params.isObject()
+                ? (ObjectNode) params
+                : MAPPER.createObjectNode();
+        return performRequest(idSequence.incrementAndGet(), method, paramsNode);
+    }
+
+    @Override
+    public final List<JsonNode> notifications() {
+        synchronized (receivedNotifications) {
+            return List.copyOf(receivedNotifications);
+        }
+    }
+
+    private JsonNode request(String method, ObjectNode params) {
+        long id = idSequence.incrementAndGet();
+        JsonNode response = performRequest(id, method, params);
+        if (response.has("error")) {
+            throw new IllegalStateException(
+                    "MCP server returned an error for " + method + ": " + response.get("error"));
+        }
+        return response.path("result");
+    }
+
+    private List<JsonNode> paginatedList(String method, String field) {
+        List<JsonNode> items = new ArrayList<>();
+        String cursor = null;
+        do {
+            ObjectNode params = MAPPER.createObjectNode();
+            if (cursor != null) {
+                params.put("cursor", cursor);
+            }
+            JsonNode result = request(method, params);
+            result.path(field).forEach(items::add);
+            cursor = result.hasNonNull("nextCursor") ? result.get("nextCursor").asText() : null;
+        } while (cursor != null);
+        return items;
+    }
+
+    /** Builds a JSON-RPC request envelope. */
     protected final ObjectNode requestEnvelope(long id, String method, ObjectNode params) {
         ObjectNode message = MAPPER.createObjectNode();
         message.put("jsonrpc", "2.0");
@@ -127,12 +194,8 @@ public abstract class AbstractMcpTestClient implements McpTestClient {
         return message;
     }
 
-    /** Unwraps a JSON-RPC response, throwing on {@code error} responses. */
-    protected final JsonNode unwrapResponse(JsonNode response, String method) {
-        if (response.has("error")) {
-            throw new IllegalStateException(
-                    "MCP server returned an error for " + method + ": " + response.get("error"));
-        }
-        return response.path("result");
+    /** Records a server-initiated notification observed by a transport. */
+    protected final void recordNotification(JsonNode message) {
+        receivedNotifications.add(message);
     }
 }

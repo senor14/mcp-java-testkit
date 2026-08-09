@@ -36,7 +36,31 @@ class McpServerEndToEndTest {
                 .toolSchemasAreValid()
                 .toolListWithinTokenBudget(2_000)
                 .eachToolWithinTokenBudget(500)
-                .callToolSucceeds("add", Map.of("a", 2, "b", 3));
+                .callToolSucceeds("add", Map.of("a", 2, "b", 3))
+                .toolOutputSchemasAreValid()
+                .callToolConformsToOutputSchema("add", Map.of("a", 2, "b", 3))
+                .declaresResourcesCapability()
+                .hasResources()
+                .resourceUrisAreUnique()
+                .resourcesHaveNames()
+                .readResourceSucceeds("sample://greeting")
+                .declaresPromptsCapability()
+                .hasPrompts()
+                .promptNamesAreUnique()
+                .promptArgumentsAreWellFormed()
+                .getPromptSucceeds("greet", Map.of("who", "world"))
+                .unknownMethodYieldsMethodNotFound()
+                .unknownToolHandledGracefully();
+    }
+
+    @Test
+    void capturesServerInitiatedNotifications(McpTestClient client) {
+        // The sample server pushes notifications/tools/list_changed right after the
+        // initialized notification; listTools() gives the pump time to deliver it.
+        client.listTools();
+        org.junit.jupiter.api.Assertions.assertTrue(
+                client.awaitNotification("notifications/tools/list_changed", java.time.Duration.ofSeconds(5)),
+                "expected a tools/list_changed notification from the sample server");
     }
 
     @Test

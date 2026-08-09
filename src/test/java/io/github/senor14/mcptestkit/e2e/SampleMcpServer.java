@@ -29,6 +29,13 @@ public final class SampleMcpServer {
             JsonNode message = MAPPER.readTree(line);
             ObjectNode response = SampleMcpLogic.handle(message);
             if (response == null) {
+                // After the client confirms initialization, push a server-initiated notification
+                // so notification capture is exercised end-to-end.
+                if ("notifications/initialized".equals(message.path("method").asText())) {
+                    out.write(MAPPER.writeValueAsString(SampleMcpLogic.listChangedNotification()));
+                    out.write('\n');
+                    out.flush();
+                }
                 continue;
             }
             out.write(MAPPER.writeValueAsString(response));

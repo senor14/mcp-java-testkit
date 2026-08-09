@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased (0.4.0)
+
+Closes the protocol-coverage gaps beyond tools:
+
+- **Resources & prompts**: `listResources()`, `listResourceTemplates()`, `readResource(uri)`, `listPrompts()`, `getPrompt(name, args)` on the client, with assertions `declaresResourcesCapability()`, `hasResources()`, `resourceUrisAreUnique()`, `resourcesHaveNames()`, `readResourceSucceeds(uri)`, `declaresPromptsCapability()`, `hasPrompts()`, `promptNamesAreUnique()`, `promptArgumentsAreWellFormed()`, `getPromptSucceeds(name, args)`.
+- **Structured tool output**: `toolOutputSchemasAreValid()` and `callToolConformsToOutputSchema(name, args)` validate declared `outputSchema`s and that `structuredContent` conforms (required properties, declared types).
+- **Error-path conformance**: `exchange(method, params)` exposes raw JSON-RPC envelopes; `unknownMethodYieldsMethodNotFound()` and `unknownToolHandledGracefully()` verify servers fail loudly, not silently.
+- **Notification capture**: server-initiated notifications are recorded on all transports (`notifications()`, `awaitNotification(method, timeout)`); `HttpMcpTestClient.openNotificationStream()` opens the standalone GET SSE listening stream.
+
 ## 0.3.0 — 2026-08-09
 
 - **Five new conformance assertions**: `declaresToolsCapability()`, `toolNamesAreUnique()`, `toolNamesMatch(regex)`, `negotiatedProtocolVersionIsOneOf(...)`, and `eachToolWithinTokenBudget(n)` (pinpoints the offending tool). `McpTestClient` now exposes `serverCapabilities()`.

@@ -39,12 +39,25 @@ class HttpMcpServerEndToEndTest {
     }
 
     @Test
-    void parsesSseEventStreamResponses() throws Exception {
+    void parsesSseEventStreamResponsesAndRecordsInterleavedNotifications() throws Exception {
         try (SampleHttpMcpServer server = new SampleHttpMcpServer(true, false);
              HttpMcpTestClient client = HttpMcpTestClient.connect(
                      URI.create(server.endpoint()), Map.of(), TIMEOUT)) {
             JsonNode result = client.callTool("add", Map.of("a", 2, "b", 3));
             assertEquals("5", result.path("content").get(0).path("text").asText());
+            assertTrue(client.awaitNotification("notifications/tools/list_changed", TIMEOUT),
+                    "notifications interleaved in SSE response bodies should be recorded");
+        }
+    }
+
+    @Test
+    void listeningStreamDeliversStandaloneNotifications() throws Exception {
+        try (SampleHttpMcpServer server = new SampleHttpMcpServer(false, false);
+             HttpMcpTestClient client = HttpMcpTestClient.connect(
+                     URI.create(server.endpoint()), Map.of(), TIMEOUT)) {
+            client.openNotificationStream();
+            assertTrue(client.awaitNotification("notifications/tools/list_changed", TIMEOUT),
+                    "the GET listening stream should deliver server-initiated notifications");
         }
     }
 

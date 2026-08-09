@@ -62,6 +62,12 @@ final class SampleHttpMcpServer implements AutoCloseable {
                 exchange.sendResponseHeaders(204, -1);
                 return;
             }
+            if ("GET".equals(exchange.getRequestMethod())) {
+                // Standalone listening stream: push one notification, then close.
+                respond(exchange, 200, "text/event-stream", "event: message\ndata: "
+                        + MAPPER.writeValueAsString(SampleMcpLogic.listChangedNotification()) + "\n\n");
+                return;
+            }
             if (!"POST".equals(exchange.getRequestMethod())) {
                 exchange.sendResponseHeaders(405, -1);
                 return;
@@ -87,8 +93,10 @@ final class SampleHttpMcpServer implements AutoCloseable {
             }
             String json = MAPPER.writeValueAsString(response);
             if (sse) {
+                // Interleave a notification before the response so SSE notification capture is exercised.
                 respond(exchange, 200, "text/event-stream",
-                        "event: message\ndata: " + json + "\n\n");
+                        "event: message\ndata: " + MAPPER.writeValueAsString(SampleMcpLogic.listChangedNotification())
+                                + "\n\nevent: message\ndata: " + json + "\n\n");
             } else {
                 respond(exchange, 200, "application/json", json);
             }

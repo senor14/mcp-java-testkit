@@ -9,9 +9,12 @@
 MCP server test tooling today is TypeScript-centric. If you build MCP servers in Java — with the official [java-sdk](https://github.com/modelcontextprotocol/java-sdk) or Spring AI — there is no native way to write conformance, contract, or regression tests in your own stack. `mcp-java-testkit` fills that gap:
 
 - **JUnit 5 extension** — spin up your MCP server for a test class, get an injected test client, tear everything down cleanly.
-- **Conformance checks** — assert your server satisfies MCP spec expectations (tool schemas are valid JSON Schema, descriptions present, initialize handshake correct — tracking the 2026-07-28 revision).
+- **Conformance checks** — 26 fluent assertions across the initialize handshake, capabilities, tools (schemas, naming, structured output), resources, prompts, and error paths (tracking the 2026-07-28 revision).
 - **Contract / snapshot regression** — snapshot your tool list and schemas; fail CI when a change would break existing clients.
-- **Token-budget gates** — fail CI when a tool description or response payload exceeds a configured token budget, keeping your server agent-friendly.
+- **Token-budget gates** — fail CI when a tool list or an individual tool exceeds a configured token budget, keeping your server agent-friendly.
+- **Notification capture** — server-initiated notifications are recorded on every transport, including the standalone HTTP GET listening stream.
+
+**Protocol coverage**: initialize/capabilities, tools (list + pagination, call, input/output schemas, structured content), resources (list, templates, read), prompts (list, get), server notifications, and error-path behavior — over stdio and Streamable HTTP (JSON + SSE + session compatibility). Not yet covered: client-served requests (sampling/elicitation are auto-rejected), completions, and OAuth flows.
 
 ## Installation
 

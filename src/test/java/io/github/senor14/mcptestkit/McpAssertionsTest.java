@@ -131,6 +131,97 @@ class McpAssertionsTest {
     }
 
     @Test
+    void resourceAssertionsCoverUniquenessNamesAndRead() {
+        McpTestClient client = new FakeMcpTestClient(true)
+                .withResource("{\"uri\": \"app://a\", \"name\": \"a\"}")
+                .withResource("{\"uri\": \"app://a\", \"name\": \"dup\"}")
+                .withResource("{\"uri\": \"app://b\", \"name\": \"\"}");
+        assertThrows(AssertionError.class, () -> McpAssertions.assertThat(client).resourceUrisAreUnique());
+        assertThrows(AssertionError.class, () -> McpAssertions.assertThat(client).resourcesHaveNames());
+        assertDoesNotThrow(() -> McpAssertions.assertThat(client).hasResources()
+                .readResourceSucceeds("app://a"));
+
+        McpTestClient badRead = new FakeMcpTestClient(true)
+                .withReadResourceResult("{\"contents\": [{\"uri\": \"app://a\"}]}");
+        assertThrows(AssertionError.class,
+                () -> McpAssertions.assertThat(badRead).readResourceSucceeds("app://a"));
+    }
+
+    @Test
+    void promptAssertionsCoverUniquenessArgumentsAndGet() {
+        McpTestClient client = new FakeMcpTestClient(true)
+                .withPrompt("{\"name\": \"greet\", \"arguments\": [{\"name\": \"who\"}]}")
+                .withPrompt("{\"name\": \"greet\"}")
+                .withPrompt("{\"name\": \"broken\", \"arguments\": [{\"description\": \"nameless\"}]}");
+        assertThrows(AssertionError.class, () -> McpAssertions.assertThat(client).promptNamesAreUnique());
+        assertThrows(AssertionError.class,
+                () -> McpAssertions.assertThat(client).promptArgumentsAreWellFormed());
+        assertDoesNotThrow(() -> McpAssertions.assertThat(client).hasPrompts()
+                .getPromptSucceeds("greet", Map.of("who", "world")));
+
+        McpTestClient badRole = new FakeMcpTestClient(true).withGetPromptResult(
+                "{\"messages\": [{\"role\": \"system\", \"content\": {\"type\": \"text\", \"text\": \"x\"}}]}");
+        assertThrows(AssertionError.class,
+                () -> McpAssertions.assertThat(badRole).getPromptSucceeds("greet", Map.of()));
+    }
+
+    @Test
+    void outputSchemaConformanceChecksStructuredContent() {
+        String toolWithOutput = """
+                {"name": "add", "description": "x",
+                 "inputSchema": {"type": "object"},
+                 "outputSchema": {"type": "object",
+                                  "properties": {"sum": {"type": "number"}},
+                                  "required": ["sum"]}}""";
+        McpTestClient conforming = new FakeMcpTestClient(true).withTool(toolWithOutput)
+                .withCallResult("{\"isError\": false, \"structuredContent\": {\"sum\": 5}}");
+        assertDoesNotThrow(() -> McpAssertions.assertThat(conforming)
+                .toolOutputSchemasAreValid()
+                .callToolConformsToOutputSchema("add", Map.of()));
+
+        McpTestClient missingStructured = new FakeMcpTestClient(true).withTool(toolWithOutput)
+                .withCallResult("{\"isError\": false}");
+        assertThrows(AssertionError.class, () -> McpAssertions.assertThat(missingStructured)
+                .callToolConformsToOutputSchema("add", Map.of()));
+
+        McpTestClient wrongType = new FakeMcpTestClient(true).withTool(toolWithOutput)
+                .withCallResult("{\"isError\": false, \"structuredContent\": {\"sum\": \"five\"}}");
+        assertThrows(AssertionError.class, () -> McpAssertions.assertThat(wrongType)
+                .callToolConformsToOutputSchema("add", Map.of()));
+    }
+
+    @Test
+    void errorPathAssertionsInspectRawExchanges() {
+        McpTestClient conforming = new FakeMcpTestClient(true)
+                .withExchangeResponse("mcp_testkit/no_such_method",
+                        "{\"jsonrpc\": \"2.0\", \"id\": 1, \"error\": {\"code\": -32601, \"message\": \"nf\"}}")
+                .withExchangeResponse("tools/call",
+                        "{\"jsonrpc\": \"2.0\", \"id\": 2, \"result\": {\"isError\": true, \"content\": []}}");
+        assertDoesNotThrow(() -> McpAssertions.assertThat(conforming)
+                .unknownMethodYieldsMethodNotFound()
+                .unknownToolHandledGracefully());
+
+        McpTestClient silentSuccess = new FakeMcpTestClient(true)
+                .withExchangeResponse("tools/call",
+                        "{\"jsonrpc\": \"2.0\", \"id\": 2, \"result\": {\"isError\": false, \"content\": []}}");
+        assertThrows(AssertionError.class,
+                () -> McpAssertions.assertThat(silentSuccess).unknownToolHandledGracefully());
+    }
+
+    @Test
+    void capabilityAssertionsCoverResourcesAndPrompts() {
+        McpTestClient full = new FakeMcpTestClient(true)
+                .withCapabilities("{\"tools\": {}, \"resources\": {}, \"prompts\": {}}");
+        assertDoesNotThrow(() -> McpAssertions.assertThat(full)
+                .declaresToolsCapability()
+                .declaresResourcesCapability()
+                .declaresPromptsCapability());
+        McpTestClient toolsOnly = new FakeMcpTestClient(true).withCapabilities("{\"tools\": {}}");
+        assertThrows(AssertionError.class,
+                () -> McpAssertions.assertThat(toolsOnly).declaresResourcesCapability());
+    }
+
+    @Test
     void callToolSucceedsChecksIsError() {
         McpTestClient ok = new FakeMcpTestClient(true).withCallResult("{\"isError\": false}");
         assertDoesNotThrow(() -> McpAssertions.assertThat(ok).callToolSucceeds("t", Map.of()));

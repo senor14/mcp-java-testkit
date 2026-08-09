@@ -74,8 +74,7 @@ public final class StdioMcpTestClient extends AbstractMcpTestClient {
     }
 
     @Override
-    protected JsonNode request(String method, ObjectNode params) {
-        long id = idSequence.incrementAndGet();
+    protected JsonNode performRequest(long id, String method, ObjectNode params) {
         send(requestEnvelope(id, method, params));
 
         long deadline = System.nanoTime() + timeout.toNanos();
@@ -95,9 +94,9 @@ public final class StdioMcpTestClient extends AbstractMcpTestClient {
                 throw new IllegalStateException(timeoutMessage(method));
             }
             if (received.path("id").asLong(-1) == id && !received.has("method")) {
-                return unwrapResponse(received, method);
+                return received;
             }
-            // Anything else is a server notification or request; handled in onServerLine.
+            // Responses to other ids are dropped; notifications/requests are handled in onServerLine.
         }
     }
 
@@ -116,15 +115,15 @@ public final class StdioMcpTestClient extends AbstractMcpTestClient {
         } catch (IOException e) {
             return; // Non-JSON noise on stdout; conformance checks for this can come later.
         }
-        boolean isServerRequest = message.has("method") && message.has("id");
-        if (isServerRequest) {
+        boolean hasMethod = message.has("method");
+        boolean hasId = message.has("id");
+        if (hasMethod && hasId) {
             rejectServerRequest(message);
-            return;
-        }
-        if (message.has("id")) {
+        } else if (hasMethod) {
+            recordNotification(message);
+        } else if (hasId) {
             incoming.offer(message);
         }
-        // Notifications are ignored in v0.
     }
 
     /** Tests don't serve sampling/elicitation; refuse politely so the server never blocks on us. */
