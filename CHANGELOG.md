@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (0.3.0)
+## 0.3.0 — 2026-08-09
 
 - **Five new conformance assertions**: `declaresToolsCapability()`, `toolNamesAreUnique()`, `toolNamesMatch(regex)`, `negotiatedProtocolVersionIsOneOf(...)`, and `eachToolWithinTokenBudget(n)` (pinpoints the offending tool). `McpTestClient` now exposes `serverCapabilities()`.
 - **`spring:` URL scheme** — `@McpServerTest(url = "spring:/mcp")` discovers the random port of a `@SpringBootTest(webEnvironment = RANDOM_PORT)` context automatically. The lookup is reflective, so the published artifact still has zero Spring dependencies.
