@@ -33,7 +33,7 @@ public class McpTestExtension implements BeforeAllCallback, AfterAllCallback, Pa
                     "McpTestExtension requires the test class to be annotated with @McpServerTest");
         }
         McpTestClient client = StdioMcpTestClient.connect(
-                annotation.command(),
+                resolvePlaceholders(annotation.command()),
                 parseEnv(annotation.env()),
                 Duration.ofSeconds(annotation.requestTimeoutSeconds()));
         context.getStore(NAMESPACE).put(CLIENT_KEY, client);
@@ -59,6 +59,33 @@ public class McpTestExtension implements BeforeAllCallback, AfterAllCallback, Pa
             throw new ParameterResolutionException("No MCP test client available — check @McpServerTest setup");
         }
         return client;
+    }
+
+    /**
+     * Expands {@code ${property}} placeholders in command entries from Java system
+     * properties, so annotations can stay compile-time constant while referring to
+     * runtime paths, e.g. {@code "${java.home}/bin/java"} or {@code "${java.class.path}"}.
+     * Unknown properties are left as-is.
+     */
+    private static String[] resolvePlaceholders(String[] command) {
+        String[] resolved = new String[command.length];
+        for (int i = 0; i < command.length; i++) {
+            StringBuilder value = new StringBuilder(command[i]);
+            int start;
+            while ((start = value.indexOf("${")) >= 0) {
+                int end = value.indexOf("}", start);
+                if (end < 0) {
+                    break;
+                }
+                String property = System.getProperty(value.substring(start + 2, end));
+                if (property == null) {
+                    break;
+                }
+                value.replace(start, end + 1, property);
+            }
+            resolved[i] = value.toString();
+        }
+        return resolved;
     }
 
     private static Map<String, String> parseEnv(String[] entries) {
