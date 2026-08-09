@@ -1,25 +1,19 @@
 package io.github.senor14.mcptestkit.client;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.github.senor14.mcptestkit.McpTestClient;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * MCP test client that speaks the stdio wire protocol (newline-delimited JSON-RPC 2.0)
@@ -29,24 +23,13 @@ import java.util.concurrent.atomic.AtomicLong;
  * what the server actually sends, and the toolkit can test MCP servers written in any
  * language or SDK version.</p>
  */
-public final class StdioMcpTestClient implements McpTestClient {
-
-    /** Latest protocol revision this client requests during initialize. */
-    public static final String REQUESTED_PROTOCOL_VERSION = "2026-07-28";
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+public final class StdioMcpTestClient extends AbstractMcpTestClient {
 
     private final Process process;
     private final BufferedWriter serverStdin;
     private final Duration timeout;
-    private final AtomicLong idSequence = new AtomicLong();
     private final BlockingQueue<JsonNode> incoming = new LinkedBlockingQueue<>();
     private final StringBuilder stderrBuffer = new StringBuilder();
-
-    private boolean initialized;
-    private String serverName = "";
-    private String serverVersion = "";
-    private String protocolVersion = "";
 
     private StdioMcpTestClient(Process process, Duration timeout) {
         this.process = process;
@@ -73,71 +56,6 @@ public final class StdioMcpTestClient implements McpTestClient {
         return client;
     }
 
-    private void initialize() {
-        ObjectNode params = MAPPER.createObjectNode();
-        params.put("protocolVersion", REQUESTED_PROTOCOL_VERSION);
-        params.set("capabilities", MAPPER.createObjectNode());
-        ObjectNode clientInfo = params.putObject("clientInfo");
-        clientInfo.put("name", "mcp-java-testkit");
-        clientInfo.put("version", "0.1.0");
-
-        JsonNode result = request("initialize", params);
-        protocolVersion = result.path("protocolVersion").asText("");
-        serverName = result.path("serverInfo").path("name").asText("");
-        serverVersion = result.path("serverInfo").path("version").asText("");
-        sendNotification("notifications/initialized");
-        initialized = true;
-    }
-
-    @Override
-    public boolean initialized() {
-        return initialized;
-    }
-
-    @Override
-    public String serverName() {
-        return serverName;
-    }
-
-    @Override
-    public String serverVersion() {
-        return serverVersion;
-    }
-
-    @Override
-    public String protocolVersion() {
-        return protocolVersion;
-    }
-
-    @Override
-    public List<JsonNode> listTools() {
-        List<JsonNode> tools = new ArrayList<>();
-        String cursor = null;
-        do {
-            ObjectNode params = MAPPER.createObjectNode();
-            if (cursor != null) {
-                params.put("cursor", cursor);
-            }
-            JsonNode result = request("tools/list", params);
-            result.path("tools").forEach(tools::add);
-            cursor = result.hasNonNull("nextCursor") ? result.get("nextCursor").asText() : null;
-        } while (cursor != null);
-        return tools;
-    }
-
-    @Override
-    public List<String> toolNames() {
-        return listTools().stream().map(tool -> tool.path("name").asText()).toList();
-    }
-
-    @Override
-    public JsonNode callTool(String name, Map<String, Object> arguments) {
-        ObjectNode params = MAPPER.createObjectNode();
-        params.put("name", name);
-        params.set("arguments", MAPPER.valueToTree(arguments));
-        return request("tools/call", params);
-    }
-
     @Override
     public void close() {
         try {
@@ -155,14 +73,10 @@ public final class StdioMcpTestClient implements McpTestClient {
         }
     }
 
-    private JsonNode request(String method, ObjectNode params) {
+    @Override
+    protected JsonNode request(String method, ObjectNode params) {
         long id = idSequence.incrementAndGet();
-        ObjectNode message = MAPPER.createObjectNode();
-        message.put("jsonrpc", "2.0");
-        message.put("id", id);
-        message.put("method", method);
-        message.set("params", params);
-        send(message);
+        send(requestEnvelope(id, method, params));
 
         long deadline = System.nanoTime() + timeout.toNanos();
         while (true) {
@@ -181,14 +95,15 @@ public final class StdioMcpTestClient implements McpTestClient {
                 throw new IllegalStateException(timeoutMessage(method));
             }
             if (received.path("id").asLong(-1) == id && !received.has("method")) {
-                if (received.has("error")) {
-                    throw new IllegalStateException(
-                            "MCP server returned an error for " + method + ": " + received.get("error"));
-                }
-                return received.path("result");
+                return unwrapResponse(received, method);
             }
             // Anything else is a server notification or request; handled in onServerLine.
         }
+    }
+
+    @Override
+    protected void sendNotification(String method) {
+        send(notificationEnvelope(method));
     }
 
     private void onServerLine(String line) {
@@ -206,8 +121,7 @@ public final class StdioMcpTestClient implements McpTestClient {
             rejectServerRequest(message);
             return;
         }
-        boolean isResponse = message.has("id");
-        if (isResponse) {
+        if (message.has("id")) {
             incoming.offer(message);
         }
         // Notifications are ignored in v0.
@@ -222,13 +136,6 @@ public final class StdioMcpTestClient implements McpTestClient {
         error.put("code", -32601);
         error.put("message", "mcp-java-testkit does not serve " + requestMessage.path("method").asText());
         send(response);
-    }
-
-    private void sendNotification(String method) {
-        ObjectNode message = MAPPER.createObjectNode();
-        message.put("jsonrpc", "2.0");
-        message.put("method", method);
-        send(message);
     }
 
     private synchronized void send(JsonNode message) {

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased (0.2.0)
+
+- **Streamable HTTP transport** (`HttpMcpTestClient`, `@McpServerTest(url = ...)`): test MCP servers over HTTP — including Spring AI MCP servers via `@SpringBootTest(webEnvironment = RANDOM_PORT)`. Handles plain-JSON and SSE response modes, and transparently captures/echoes `Mcp-Session-Id` for servers on pre-2026 protocol revisions (including session `DELETE` on close).
+- `@McpServerTest` gains `url` and `headers` attributes; `${property}` interpolation now applies to `url` as well.
+- Internal: protocol flow extracted to `AbstractMcpTestClient`, shared by both transports.
+
 ## 0.1.0 — 2026-08-09
 
 First release, available on [Maven Central](https://central.sonatype.com/artifact/io.github.senor14/mcp-java-testkit).

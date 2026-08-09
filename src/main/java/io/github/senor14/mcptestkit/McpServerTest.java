@@ -10,17 +10,20 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Boots an MCP server over stdio for the annotated test class and injects a
+ * Connects to an MCP server for the annotated test class and injects a
  * {@link McpTestClient} into test method parameters.
  *
+ * <p>Exactly one of {@link #command()} (stdio transport) or {@link #url()} (Streamable
+ * HTTP transport) must be set. Values support {@code ${property}} interpolation from
+ * Java system properties, e.g. {@code "${java.home}/bin/java"} or
+ * {@code "http://localhost:${server.port}/mcp"}.</p>
+ *
  * <pre>{@code
+ * // stdio: launch the server as a child process
  * @McpServerTest(command = {"java", "-jar", "target/my-server.jar"})
- * class MyServerConformanceTest {
- *     @Test
- *     void conformsToSpec(McpTestClient client) {
- *         McpAssertions.assertThat(client).initializesSuccessfully();
- *     }
- * }
+ *
+ * // Streamable HTTP: connect to a running server, e.g. a Spring Boot test instance
+ * @McpServerTest(url = "http://localhost:${test.server.port}/mcp")
  * }</pre>
  */
 @Target(ElementType.TYPE)
@@ -29,11 +32,17 @@ import java.lang.annotation.Target;
 @ExtendWith(McpTestExtension.class)
 public @interface McpServerTest {
 
-    /** Command line used to launch the server process, e.g. {@code {"npx", "-y", "my-server"}}. */
-    String[] command();
+    /** Command line used to launch a stdio server process, e.g. {@code {"npx", "-y", "my-server"}}. */
+    String[] command() default {};
 
-    /** Extra environment variables for the server process, each entry as {@code "KEY=VALUE"}. */
+    /** Streamable HTTP endpoint of a running MCP server, e.g. {@code "http://localhost:8080/mcp"}. */
+    String url() default "";
+
+    /** Extra environment variables for the stdio server process, each entry as {@code "KEY=VALUE"}. */
     String[] env() default {};
+
+    /** Extra HTTP headers for the HTTP transport, each entry as {@code "Name=value"}. */
+    String[] headers() default {};
 
     /** Per-request timeout in seconds. */
     long requestTimeoutSeconds() default 30;
