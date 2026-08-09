@@ -17,6 +17,7 @@ final class FakeMcpTestClient implements McpTestClient {
     private final boolean initialized;
     private final List<JsonNode> tools = new ArrayList<>();
     private JsonNode callResult = MAPPER.createObjectNode().put("isError", false);
+    private JsonNode capabilities = MAPPER.createObjectNode();
 
     FakeMcpTestClient(boolean initialized) {
         this.initialized = initialized;
@@ -58,6 +59,20 @@ final class FakeMcpTestClient implements McpTestClient {
     @Override
     public String protocolVersion() {
         return "2026-07-28";
+    }
+
+    FakeMcpTestClient withCapabilities(String json) {
+        try {
+            capabilities = MAPPER.readTree(json);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return this;
+    }
+
+    @Override
+    public JsonNode serverCapabilities() {
+        return capabilities;
     }
 
     @Override

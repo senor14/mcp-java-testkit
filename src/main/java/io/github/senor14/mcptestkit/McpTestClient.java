@@ -27,6 +27,12 @@ public interface McpTestClient extends AutoCloseable {
     String protocolVersion();
 
     /**
+     * The {@code capabilities} object the server declared during initialization,
+     * or an empty object if unavailable.
+     */
+    JsonNode serverCapabilities();
+
+    /**
      * The tool list as returned by the server, one JSON object per tool with at least
      * {@code name}, {@code description}, and {@code inputSchema} fields when present.
      */

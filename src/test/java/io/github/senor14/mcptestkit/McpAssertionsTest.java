@@ -80,6 +80,57 @@ class McpAssertionsTest {
     }
 
     @Test
+    void declaresToolsCapabilityChecksInitializeResult() {
+        McpTestClient declaring = new FakeMcpTestClient(true).withCapabilities("{\"tools\": {}}");
+        assertDoesNotThrow(() -> McpAssertions.assertThat(declaring).declaresToolsCapability());
+
+        McpTestClient silent = new FakeMcpTestClient(true).withCapabilities("{}");
+        assertThrows(AssertionError.class,
+                () -> McpAssertions.assertThat(silent).declaresToolsCapability());
+    }
+
+    @Test
+    void detectsDuplicateToolNames() {
+        McpTestClient client = new FakeMcpTestClient(true)
+                .withTool("{\"name\": \"search\", \"description\": \"a\"}")
+                .withTool("{\"name\": \"search\", \"description\": \"b\"}");
+        AssertionError error = assertThrows(AssertionError.class,
+                () -> McpAssertions.assertThat(client).toolNamesAreUnique());
+        assertTrue(error.getMessage().contains("search"));
+    }
+
+    @Test
+    void enforcesToolNamingConvention() {
+        McpTestClient client = new FakeMcpTestClient(true)
+                .withTool("{\"name\": \"good_name\", \"description\": \"x\"}")
+                .withTool("{\"name\": \"BadName\", \"description\": \"x\"}");
+        assertDoesNotThrow(() -> McpAssertions.assertThat(client).toolNamesMatch("[A-Za-z0-9_]+"));
+        AssertionError error = assertThrows(AssertionError.class,
+                () -> McpAssertions.assertThat(client).toolNamesMatch("[a-z0-9_]+"));
+        assertTrue(error.getMessage().contains("BadName"));
+    }
+
+    @Test
+    void checksNegotiatedProtocolVersion() {
+        McpTestClient client = new FakeMcpTestClient(true);
+        assertDoesNotThrow(() -> McpAssertions.assertThat(client)
+                .negotiatedProtocolVersionIsOneOf("2025-11-25", "2026-07-28"));
+        assertThrows(AssertionError.class, () -> McpAssertions.assertThat(client)
+                .negotiatedProtocolVersionIsOneOf("2025-11-25"));
+    }
+
+    @Test
+    void perToolTokenBudgetPinpointsOffender() {
+        McpTestClient client = new FakeMcpTestClient(true)
+                .withTool("{\"name\": \"small\", \"description\": \"ok\"}")
+                .withTool("{\"name\": \"huge\", \"description\": \"" + "word ".repeat(300) + "\"}");
+        AssertionError error = assertThrows(AssertionError.class,
+                () -> McpAssertions.assertThat(client).eachToolWithinTokenBudget(100));
+        assertTrue(error.getMessage().contains("huge"));
+        assertTrue(!error.getMessage().contains("small (~"));
+    }
+
+    @Test
     void callToolSucceedsChecksIsError() {
         McpTestClient ok = new FakeMcpTestClient(true).withCallResult("{\"isError\": false}");
         assertDoesNotThrow(() -> McpAssertions.assertThat(ok).callToolSucceeds("t", Map.of()));

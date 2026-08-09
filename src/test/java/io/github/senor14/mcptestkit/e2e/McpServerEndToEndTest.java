@@ -25,12 +25,17 @@ class McpServerEndToEndTest {
     void fullConformancePass(McpTestClient client) {
         McpAssertions.assertThat(client)
                 .initializesSuccessfully()
+                .declaresToolsCapability()
+                .negotiatedProtocolVersionIsOneOf(StdioMcpTestClient.REQUESTED_PROTOCOL_VERSION)
                 .hasTools()
                 .toolExists("add")
                 .toolExists("echo") // second page — proves cursor pagination works
+                .toolNamesAreUnique()
+                .toolNamesMatch("[a-z0-9_]+")
                 .toolsHaveDescriptions()
                 .toolSchemasAreValid()
                 .toolListWithinTokenBudget(2_000)
+                .eachToolWithinTokenBudget(500)
                 .callToolSucceeds("add", Map.of("a", 2, "b", 3));
     }
 

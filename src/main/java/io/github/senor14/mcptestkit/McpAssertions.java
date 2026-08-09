@@ -125,6 +125,80 @@ public final class McpAssertions {
     }
 
     /**
+     * Asserts the server declared the {@code tools} capability during initialization —
+     * clients are allowed to skip {@code tools/list} entirely for servers that don't.
+     */
+    public McpAssertions declaresToolsCapability() {
+        if (!client.serverCapabilities().has("tools")) {
+            throw new AssertionError("Server '" + client.serverName()
+                    + "' did not declare the 'tools' capability during initialization. Declared: "
+                    + client.serverCapabilities());
+        }
+        return this;
+    }
+
+    /** Asserts no two tools share a name — duplicated names make tool selection ambiguous. */
+    public McpAssertions toolNamesAreUnique() {
+        List<String> names = client.toolNames();
+        List<String> duplicates = names.stream()
+                .filter(name -> java.util.Collections.frequency(names, name) > 1)
+                .distinct()
+                .toList();
+        if (!duplicates.isEmpty()) {
+            throw new AssertionError("Duplicate tool names: " + duplicates);
+        }
+        return this;
+    }
+
+    /**
+     * Asserts every tool name matches the given regex — useful for enforcing a naming
+     * convention (e.g. {@code "[a-z0-9_]+"} for snake_case) across the server.
+     */
+    public McpAssertions toolNamesMatch(String regex) {
+        List<String> offending = client.toolNames().stream()
+                .filter(name -> !name.matches(regex))
+                .toList();
+        if (!offending.isEmpty()) {
+            throw new AssertionError("Tool names not matching '" + regex + "': " + offending);
+        }
+        return this;
+    }
+
+    /**
+     * Asserts the negotiated protocol version is one of the given revisions — catches a
+     * server silently downgrading the handshake to an unexpected revision.
+     */
+    public McpAssertions negotiatedProtocolVersionIsOneOf(String... revisions) {
+        String negotiated = client.protocolVersion();
+        for (String revision : revisions) {
+            if (revision.equals(negotiated)) {
+                return this;
+            }
+        }
+        throw new AssertionError("Negotiated protocol version '" + negotiated
+                + "' is not one of " + List.of(revisions));
+    }
+
+    /**
+     * Asserts each individual tool definition stays within an estimated token budget,
+     * pinpointing the offender — complements {@link #toolListWithinTokenBudget(int)}.
+     */
+    public McpAssertions eachToolWithinTokenBudget(int maxTokensPerTool) {
+        List<String> offending = new ArrayList<>();
+        for (JsonNode tool : client.listTools()) {
+            int estimate = TokenEstimator.estimate(toJson(tool));
+            if (estimate > maxTokensPerTool) {
+                offending.add(tool.path("name").asText("<unnamed>") + " (~" + estimate + " tokens)");
+            }
+        }
+        if (!offending.isEmpty()) {
+            throw new AssertionError("Tools over the per-tool budget of " + maxTokensPerTool
+                    + " tokens: " + offending);
+        }
+        return this;
+    }
+
+    /**
      * Asserts the serialized tool list stays within an estimated token budget.
      * Tool lists are injected into every agent conversation, so unchecked growth
      * directly taxes every user of the server.

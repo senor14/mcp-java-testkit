@@ -28,6 +28,7 @@ public abstract class AbstractMcpTestClient implements McpTestClient {
     private String serverName = "";
     private String serverVersion = "";
     private String protocolVersion = "";
+    private JsonNode serverCapabilities = MAPPER.createObjectNode();
 
     /** Sends a JSON-RPC request over the transport and returns the {@code result} node. */
     protected abstract JsonNode request(String method, ObjectNode params);
@@ -47,6 +48,9 @@ public abstract class AbstractMcpTestClient implements McpTestClient {
         protocolVersion = result.path("protocolVersion").asText("");
         serverName = result.path("serverInfo").path("name").asText("");
         serverVersion = result.path("serverInfo").path("version").asText("");
+        if (result.path("capabilities").isObject()) {
+            serverCapabilities = result.get("capabilities");
+        }
         sendNotification("notifications/initialized");
         initialized = true;
     }
@@ -69,6 +73,11 @@ public abstract class AbstractMcpTestClient implements McpTestClient {
     @Override
     public final String protocolVersion() {
         return protocolVersion;
+    }
+
+    @Override
+    public final JsonNode serverCapabilities() {
+        return serverCapabilities;
     }
 
     @Override
