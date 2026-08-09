@@ -58,18 +58,20 @@ class MyServerConformanceTest {
 }
 ```
 
-Works with any MCP server reachable over **stdio or Streamable HTTP** — including servers written in other languages. HTTP support means you can test a Spring AI MCP server in-process:
+Works with any MCP server reachable over **stdio or Streamable HTTP** — including servers written in other languages. Spring AI MCP servers get first-class support via the `spring:` URL scheme, which discovers the random test port from the Spring context automatically:
 
 ```java
 @SpringBootTest(webEnvironment = RANDOM_PORT)
+@McpServerTest(url = "spring:/mcp")
 class MySpringServerTest {
-    // Spring sets local.server.port; the testkit resolves ${...} from system properties
-    @McpServerTest(url = "http://localhost:${test.server.port}/mcp")
-    // ...
+    @Test
+    void conformsToSpec(McpTestClient client) {
+        McpAssertions.assertThat(client).initializesSuccessfully().toolSchemasAreValid();
+    }
 }
 ```
 
-The HTTP client follows the 2026-07-28 stateless revision and transparently echoes `Mcp-Session-Id` for servers on older revisions, handling both plain JSON and SSE response modes.
+No Spring dependency is pulled in — the port lookup is reflective and only activates when you use `spring:`. The HTTP client follows the 2026-07-28 stateless revision and transparently echoes `Mcp-Session-Id` for servers on older revisions, handling both plain JSON and SSE response modes.
 
 ## Relationship to official tooling
 
