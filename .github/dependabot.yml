@@ -4,6 +4,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # The library exposes the JUnit 5 API to consumers; staying on the 5.x line
+      # keeps it usable from every JUnit 5 project.
+      - dependency-name: "org.junit.jupiter:*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
