@@ -37,7 +37,12 @@ gpg --keyserver keyserver.ubuntu.com --send-keys <KEYID>
 ```powershell
 # 1. Drop -SNAPSHOT in pom.xml (e.g. 0.1.0), commit
 # 2. Deploy (builds jar + sources + javadoc, signs, uploads, auto-publishes)
-mvn -Prelease deploy
+#    - gpg.executable: Git-bundled GnuPG (nothing else installed on this machine)
+#    - gpg.keyname with trailing "!": force-sign with the PRIMARY key. Without it GPG
+#      signs with the newest signing-capable subkey, and Central then looks the key up
+#      by the SUBKEY fingerprint — which keys.openpgp.org cannot serve and Ubuntu may
+#      not have indexed yet, failing validation with "Could not find a public key".
+mvn -B -Prelease "-Dgpg.executable=C:\Program Files\Git\usr\bin\gpg.exe" "-Dgpg.keyname=158E856D5A08A0D4DF28EA0A90963797DDB4DB38!" deploy
 # 3. Tag and push
 git tag -a v0.1.0 -m "v0.1.0"; git push origin v0.1.0
 # 4. Bump pom.xml to next 0.2.0-SNAPSHOT, commit
