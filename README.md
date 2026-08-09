@@ -1,5 +1,9 @@
 # mcp-java-testkit
 
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.senor14/mcp-java-testkit)](https://central.sonatype.com/artifact/io.github.senor14/mcp-java-testkit)
+[![CI](https://github.com/senor14/mcp-java-testkit/actions/workflows/ci.yml/badge.svg)](https://github.com/senor14/mcp-java-testkit/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 **Testing toolkit for MCP (Model Context Protocol) servers on the JVM.**
 
 MCP server test tooling today is TypeScript-centric. If you build MCP servers in Java — with the official [java-sdk](https://github.com/modelcontextprotocol/java-sdk) or Spring AI — there is no native way to write conformance, contract, or regression tests in your own stack. `mcp-java-testkit` fills that gap:
@@ -9,9 +13,24 @@ MCP server test tooling today is TypeScript-centric. If you build MCP servers in
 - **Contract / snapshot regression** — snapshot your tool list and schemas; fail CI when a change would break existing clients.
 - **Token-budget gates** — fail CI when a tool description or response payload exceeds a configured token budget, keeping your server agent-friendly.
 
-> Status: early development (v0). API surface may change until 0.1.0 is published to Maven Central.
+## Installation
 
-## Quick look (target API)
+```xml
+<dependency>
+    <groupId>io.github.senor14</groupId>
+    <artifactId>mcp-java-testkit</artifactId>
+    <version>0.1.0</version>
+    <scope>test</scope>
+</dependency>
+```
+
+```groovy
+testImplementation 'io.github.senor14:mcp-java-testkit:0.1.0'
+```
+
+> Pre-1.0: minor releases may still evolve the API.
+
+## Quick start
 
 ```java
 @McpServerTest(command = {"java", "-jar", "target/my-mcp-server.jar"})
