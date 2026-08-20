@@ -62,6 +62,18 @@ class HttpMcpServerEndToEndTest {
     }
 
     @Test
+    void sendsNegotiatedProtocolVersionHeaderAfterHandshake() throws Exception {
+        // Required on every post-initialize request since the 2025-06-18 revision; without it a
+        // server is entitled to assume 2025-03-26.
+        try (SampleHttpMcpServer server = new SampleHttpMcpServer(false, false);
+             HttpMcpTestClient client = HttpMcpTestClient.connect(
+                     URI.create(server.endpoint()), Map.of(), TIMEOUT)) {
+            client.listTools();
+            assertEquals(client.protocolVersion(), server.lastProtocolVersionHeader());
+        }
+    }
+
+    @Test
     void capturesAndEchoesSessionIdForOlderRevisions() throws Exception {
         try (SampleHttpMcpServer server = new SampleHttpMcpServer(false, true)) {
             HttpMcpTestClient client = HttpMcpTestClient.connect(

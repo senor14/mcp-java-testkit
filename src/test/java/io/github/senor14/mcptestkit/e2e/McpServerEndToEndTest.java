@@ -81,4 +81,22 @@ class McpServerEndToEndTest {
         JsonNode result = client.callTool("missing", Map.of());
         assertEquals(true, result.path("isError").asBoolean());
     }
+
+    @Test
+    void answersServerPingWithAnEmptyResult(McpTestClient client) {
+        // The sample server pings us right after initialization and reports back what it got.
+        // The spec requires an empty result; answering -32601 lets a server treat us as a dead peer.
+        client.listTools();
+        org.junit.jupiter.api.Assertions.assertTrue(
+                client.awaitNotification("notifications/ping_observed", java.time.Duration.ofSeconds(5)),
+                "expected the sample server to report back on its ping");
+        JsonNode observed = client.notifications().stream()
+                .filter(n -> "notifications/ping_observed".equals(n.path("method").asText()))
+                .findFirst()
+                .orElseThrow()
+                .path("params");
+        assertEquals(true, observed.path("answeredWithResult").asBoolean(),
+                "ping must be answered with an empty result, got error code "
+                        + observed.path("errorCode").asInt());
+    }
 }

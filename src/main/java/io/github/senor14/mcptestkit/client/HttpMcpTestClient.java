@@ -22,12 +22,12 @@ import java.util.concurrent.CompletableFuture;
  * standalone GET listening stream.
  *
  * <p>Built on the JDK's {@link HttpClient} with no SDK dependency, so it can test MCP
- * servers written with any framework — including Spring AI MCP servers started with
+ * servers written with any framework — including a Spring Boot MCP server started with
  * {@code @SpringBootTest(webEnvironment = RANDOM_PORT)}.</p>
  *
- * <p>Follows the 2026-07-28 (stateless) revision. For servers on older revisions that
- * issue an {@code Mcp-Session-Id} during initialize, the header is captured and echoed
- * on subsequent requests automatically.</p>
+ * <p>Speaks the 2025-11-25 Streamable HTTP transport: the negotiated revision is echoed
+ * on every post-handshake request via {@code MCP-Protocol-Version}, and an
+ * {@code Mcp-Session-Id} issued during initialize is captured and echoed automatically.</p>
  */
 public final class HttpMcpTestClient extends AbstractMcpTestClient {
 
@@ -128,6 +128,12 @@ public final class HttpMcpTestClient extends AbstractMcpTestClient {
                 .header("Accept", "application/json, text/event-stream");
         if (sessionId != null) {
             requestBuilder.header("Mcp-Session-Id", sessionId);
+        }
+        // Required on every request after initialize since the 2025-06-18 revision; servers
+        // that never see it fall back to assuming 2025-03-26.
+        String negotiated = protocolVersion();
+        if (!negotiated.isEmpty()) {
+            requestBuilder.header("MCP-Protocol-Version", negotiated);
         }
         extraHeaders.forEach(requestBuilder::header);
         return requestBuilder;

@@ -33,6 +33,7 @@ final class SampleHttpMcpServer implements AutoCloseable {
     private final boolean withSession;
     private final AtomicBoolean sessionDeleted = new AtomicBoolean();
     private volatile String sessionId;
+    private volatile String lastProtocolVersionHeader;
 
     SampleHttpMcpServer(boolean sse, boolean withSession) throws IOException {
         this.sse = sse;
@@ -48,6 +49,11 @@ final class SampleHttpMcpServer implements AutoCloseable {
 
     boolean sessionWasDeleted() {
         return sessionDeleted.get();
+    }
+
+    /** The {@code MCP-Protocol-Version} header seen on the most recent post-initialize request. */
+    String lastProtocolVersionHeader() {
+        return lastProtocolVersionHeader;
     }
 
     @Override
@@ -74,6 +80,9 @@ final class SampleHttpMcpServer implements AutoCloseable {
             }
             JsonNode message = MAPPER.readTree(exchange.getRequestBody());
             boolean isInitialize = "initialize".equals(message.path("method").asText());
+            if (!isInitialize) {
+                lastProtocolVersionHeader = exchange.getRequestHeaders().getFirst("MCP-Protocol-Version");
+            }
             if (withSession && !isInitialize) {
                 String presented = exchange.getRequestHeaders().getFirst("Mcp-Session-Id");
                 if (sessionId == null || !sessionId.equals(presented)) {

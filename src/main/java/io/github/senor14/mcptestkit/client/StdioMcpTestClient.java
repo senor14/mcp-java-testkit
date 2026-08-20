@@ -126,14 +126,23 @@ public final class StdioMcpTestClient extends AbstractMcpTestClient {
         }
     }
 
-    /** Tests don't serve sampling/elicitation; refuse politely so the server never blocks on us. */
+    /**
+     * Answers server-initiated requests. {@code ping} must be answered with an empty result
+     * (a server may otherwise treat us as a dead peer and drop the connection mid-test);
+     * everything else — sampling, elicitation, roots — is refused politely so the server
+     * never blocks on us.
+     */
     private void rejectServerRequest(JsonNode requestMessage) {
         ObjectNode response = MAPPER.createObjectNode();
         response.put("jsonrpc", "2.0");
         response.set("id", requestMessage.get("id"));
-        ObjectNode error = response.putObject("error");
-        error.put("code", -32601);
-        error.put("message", "mcp-java-testkit does not serve " + requestMessage.path("method").asText());
+        if ("ping".equals(requestMessage.path("method").asText())) {
+            response.putObject("result");
+        } else {
+            ObjectNode error = response.putObject("error");
+            error.put("code", -32601);
+            error.put("message", "mcp-java-testkit does not serve " + requestMessage.path("method").asText());
+        }
         send(response);
     }
 

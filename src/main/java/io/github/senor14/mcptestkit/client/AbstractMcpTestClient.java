@@ -19,8 +19,17 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public abstract class AbstractMcpTestClient implements McpTestClient {
 
-    /** Latest protocol revision this client requests during initialize. */
-    public static final String REQUESTED_PROTOCOL_VERSION = "2026-07-28";
+    /**
+     * Protocol revision this client requests during initialize — the newest revision whose
+     * wire protocol it implements. Servers that do not support it answer with a revision they
+     * do support; assert on the outcome with
+     * {@link io.github.senor14.mcptestkit.McpAssertions#negotiatedProtocolVersionIsOneOf}.
+     *
+     * <p>The 2026-07-28 revision removes the initialize handshake entirely in favour of
+     * {@code server/discover} and {@code _meta}-carried versions, so it needs a separate
+     * client and is not implemented yet.</p>
+     */
+    public static final String REQUESTED_PROTOCOL_VERSION = "2025-11-25";
 
     protected static final ObjectMapper MAPPER = new ObjectMapper();
 
