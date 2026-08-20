@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+Conformance fixes in the client itself, found by auditing this project's own claims against the
+spec text.
+
+- **`ping` is now answered correctly.** The stdio client refused every server-initiated request
+  with `-32601`, including `ping`, which the 2025-11-25 spec says the receiver **MUST** answer
+  with an empty result. A server running liveness checks could treat the test client as a dead
+  peer and drop the connection mid-test. Sampling, elicitation and roots are still refused.
+- **`MCP-Protocol-Version` is now sent** on every post-handshake HTTP request, as required since
+  the 2025-06-18 revision. Servers that never saw the header were entitled to fall back to
+  assuming 2025-03-26.
+- **Requested protocol revision corrected to `2025-11-25`.** Earlier versions sent the string
+  `2026-07-28` while speaking the 2025-11-25 wire protocol. That revision removes the initialize
+  handshake altogether (`server/discover`, `_meta`-carried versions, `subscriptions/listen`), so
+  the client never implemented it; requesting a revision it cannot speak was wrong. Support for
+  2026-07-28 is the next major piece of work. Corrects the 0.1.0 note below.
+- **Docs**: the `spring:` scheme is verified against a Spring Boot MCP server started with
+  `@SpringBootTest(webEnvironment = RANDOM_PORT)`; it has never been tested against Spring AI's
+  MCP server starter specifically, so that claim is withdrawn from the README and the 0.2.0 note
+  below.
+
 ## 0.4.0 — 2026-08-09
 
 Closes the protocol-coverage gaps beyond tools:
