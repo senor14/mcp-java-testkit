@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 — 2026-08-20
 
 Conformance fixes in the client itself, found by auditing this project's own claims against the
 spec text.
