@@ -22,13 +22,13 @@ Most MCP test tooling runs *against* your server from the outside — the offici
 <dependency>
     <groupId>io.github.senor14</groupId>
     <artifactId>mcp-java-testkit</artifactId>
-    <version>0.5.0</version>
+    <version>0.5.1</version>
     <scope>test</scope>
 </dependency>
 ```
 
 ```groovy
-testImplementation 'io.github.senor14:mcp-java-testkit:0.5.0'
+testImplementation 'io.github.senor14:mcp-java-testkit:0.5.1'
 ```
 
 > Pre-1.0: minor releases may still evolve the API.

@@ -176,7 +176,10 @@ public final class HttpMcpTestClient extends AbstractMcpTestClient {
         }
     }
 
-    /** Parses one SSE data payload, recording it if it is a notification. Returns the message. */
+    /**
+     * Parses one SSE data payload. Notifications are recorded; server-initiated requests are
+     * answered. Returns the message.
+     */
     private JsonNode recordSseData(String data) {
         JsonNode message;
         try {
@@ -184,9 +187,40 @@ public final class HttpMcpTestClient extends AbstractMcpTestClient {
         } catch (IOException e) {
             return null; // Ignore malformed SSE payloads.
         }
-        if (message.has("method") && !message.has("id")) {
-            recordNotification(message);
+        if (message.has("method")) {
+            if (message.has("id")) {
+                answerServerRequest(message);
+            } else {
+                recordNotification(message);
+            }
         }
         return message;
+    }
+
+    /**
+     * Answers a server-initiated request by POSTing the JSON-RPC response back to the endpoint.
+     * {@code ping} must be answered with an empty result — staying silent is what makes a server
+     * conclude the peer is dead — while sampling, elicitation and roots are refused politely.
+     */
+    private void answerServerRequest(JsonNode requestMessage) {
+        ObjectNode response = MAPPER.createObjectNode();
+        response.put("jsonrpc", "2.0");
+        response.set("id", requestMessage.get("id"));
+        if ("ping".equals(requestMessage.path("method").asText())) {
+            response.putObject("result");
+        } else {
+            ObjectNode error = response.putObject("error");
+            error.put("code", -32601);
+            error.put("message", "mcp-java-testkit does not serve " + requestMessage.path("method").asText());
+        }
+        try {
+            HttpRequest request = builder()
+                    .POST(HttpRequest.BodyPublishers.ofString(MAPPER.writeValueAsString(response)))
+                    .build();
+            // Fire and forget: this may run on the SSE reading thread, which must not block.
+            http.sendAsync(request, HttpResponse.BodyHandlers.discarding());
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to answer server request from " + endpoint, e);
+        }
     }
 }

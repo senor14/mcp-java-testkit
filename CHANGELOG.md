@@ -1,14 +1,24 @@
 # Changelog
 
+## 0.5.1 — 2026-08-20
+
+- **`ping` is now answered over Streamable HTTP too.** 0.5.0 fixed this on stdio only; the HTTP
+  client had no path for answering server-initiated requests at all, so it silently dropped them.
+  Silence is worse than the `-32601` it replaced — an unanswered ping is exactly what makes a
+  server conclude the peer is dead. Server requests arriving on an SSE stream (both the response
+  stream and the standalone listening stream) are now answered on a separate POST: `ping` with an
+  empty result, sampling/elicitation/roots with `-32601`.
+
 ## 0.5.0 — 2026-08-20
 
 Conformance fixes in the client itself, found by auditing this project's own claims against the
 spec text.
 
-- **`ping` is now answered correctly.** The stdio client refused every server-initiated request
-  with `-32601`, including `ping`, which the 2025-11-25 spec says the receiver **MUST** answer
-  with an empty result. A server running liveness checks could treat the test client as a dead
-  peer and drop the connection mid-test. Sampling, elicitation and roots are still refused.
+- **`ping` is now answered correctly on stdio.** The stdio client refused every server-initiated
+  request with `-32601`, including `ping`, which the 2025-11-25 spec says the receiver **MUST**
+  answer with an empty result. A server running liveness checks could treat the test client as a
+  dead peer and drop the connection mid-test. Sampling, elicitation and roots are still refused.
+  (The HTTP transport had the same defect in a worse form; fixed in 0.5.1.)
 - **`MCP-Protocol-Version` is now sent** on every post-handshake HTTP request, as required since
   the 2025-06-18 revision. Servers that never saw the header were entitled to fall back to
   assuming 2025-03-26.

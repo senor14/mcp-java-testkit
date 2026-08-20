@@ -62,6 +62,20 @@ class HttpMcpServerEndToEndTest {
     }
 
     @Test
+    void answersServerPingOverHttpWithAnEmptyResult() throws Exception {
+        // The spec requires the receiver of a ping to answer with an empty result. Staying silent
+        // is what makes a server conclude the peer is dead, so an unanswered ping is worse than an
+        // error reply.
+        try (SampleHttpMcpServer server = new SampleHttpMcpServer(true, false);
+             HttpMcpTestClient client = HttpMcpTestClient.connect(
+                     URI.create(server.endpoint()), Map.of(), TIMEOUT)) {
+            client.listTools(); // the SSE body for this carries a server-initiated ping
+            assertTrue(server.awaitPingAnswer(TIMEOUT), "the client should answer a server ping");
+            assertTrue(server.pingAnsweredWithResult(), "ping must be answered with a result, not an error");
+        }
+    }
+
+    @Test
     void sendsNegotiatedProtocolVersionHeaderAfterHandshake() throws Exception {
         // Required on every post-initialize request since the 2025-06-18 revision; without it a
         // server is entitled to assume 2025-03-26.
