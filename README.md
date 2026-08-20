@@ -6,7 +6,7 @@
 
 **Testing toolkit for MCP (Model Context Protocol) servers on the JVM.**
 
-MCP server test tooling today is TypeScript-centric. If you build MCP servers in Java — with the official [java-sdk](https://github.com/modelcontextprotocol/java-sdk) or Spring AI — there is no native way to write conformance, contract, or regression tests in your own stack. `mcp-java-testkit` fills that gap:
+Most MCP test tooling runs *against* your server from the outside — the official inspector, conformance CLIs, scanners like mcp-observatory. `mcp-java-testkit` brings this in-process on the JVM: SDK-independent, wire-level assertions that live in your own JUnit suite, run on every `mvn test`, and fail the build when your protocol surface changes:
 
 - **JUnit 5 extension** — spin up your MCP server for a test class, get an injected test client, tear everything down cleanly.
 - **Conformance checks** — 26 fluent assertions across the initialize handshake, capabilities, tools (schemas, naming, structured output), resources, prompts, and error paths (tracking the 2026-07-28 revision).
@@ -22,13 +22,13 @@ MCP server test tooling today is TypeScript-centric. If you build MCP servers in
 <dependency>
     <groupId>io.github.senor14</groupId>
     <artifactId>mcp-java-testkit</artifactId>
-    <version>0.1.0</version>
+    <version>0.4.0</version>
     <scope>test</scope>
 </dependency>
 ```
 
 ```groovy
-testImplementation 'io.github.senor14:mcp-java-testkit:0.1.0'
+testImplementation 'io.github.senor14:mcp-java-testkit:0.4.0'
 ```
 
 > Pre-1.0: minor releases may still evolve the API.
@@ -79,7 +79,7 @@ No Spring dependency is pulled in — the port lookup is reflective and only act
 ## Relationship to official tooling
 
 - The official [conformance](https://github.com/modelcontextprotocol/conformance) suite validates protocol compliance as a CLI/GitHub Action. This project is the **JUnit-native layer**: it runs inside `mvn test` on every build and adds project-specific contract and regression checks a generic runner cannot know about. Use both.
-- The official [java-sdk](https://github.com/modelcontextprotocol/java-sdk) publishes `mcp-test`, the shared fixtures its own integration tests use. Those are tied to the SDK and its spec revision (2025-11-25 as of java-sdk 2.0.0, Tier 2). `mcp-java-testkit` speaks the stdio wire protocol directly, so it can test servers built on **any** SDK — or any language — and check newer spec revisions (2026-07-28) before Tier-2 SDKs catch up.
+- The official [java-sdk](https://github.com/modelcontextprotocol/java-sdk) publishes `mcp-test`, the shared fixtures its own integration tests use. Those are tied to the SDK and its spec revision — java-sdk 2.0.1 still targets the 2025-11-25 spec (as of Aug 2026). `mcp-java-testkit` speaks the wire protocol directly, so it can test servers built on **any** SDK — or any language — and already checks the 2026-07-28 revision.
 
 ## License
 
