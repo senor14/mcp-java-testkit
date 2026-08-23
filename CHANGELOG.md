@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- **Tool schemas are checked one level deeper.** `toolSchemasAreValid()` and
+  `toolOutputSchemasAreValid()` now inspect each declared property: a property schema must be an
+  object, and a declared `type` must be one JSON Schema actually defines. `{"type": "int"}` and
+  `{"type": "String"}` are the common way a hand-written tool schema goes wrong, and a client that
+  trusts the declared type builds the wrong argument. Properties that describe themselves without a
+  `type` (`$ref`, `anyOf`, `enum`) and union types (`["string", "null"]`) are unaffected. These are
+  still structural checks, not full JSON Schema validation.
+- **Docs**: the `spring:` scheme is verified against a real Spring AI MCP server
+  (`spring-ai-starter-mcp-server-webmvc`) in maven-tools-mcp's CI — the 0.5.0 note below withdrew
+  that claim as untested, which is no longer accurate.
+
 ## 0.5.1 — 2026-08-20
 
 - **`ping` is now answered over Streamable HTTP too.** 0.5.0 fixed this on stdio only; the HTTP

@@ -74,7 +74,7 @@ class MySpringServerTest {
 }
 ```
 
-No Spring dependency is pulled in — the port lookup is reflective and only activates when you use `spring:`. The HTTP client speaks the 2025-11-25 Streamable HTTP transport: it echoes the negotiated revision on every post-handshake request via `MCP-Protocol-Version`, captures and echoes `Mcp-Session-Id` when a server issues one, and handles both plain JSON and SSE response modes.
+No Spring dependency is pulled in — the port lookup is reflective and only activates when you use `spring:`. It is exercised against a real Spring AI MCP server (the `spring-ai-starter-mcp-server-webmvc` starter) in [maven-tools-mcp](https://github.com/arvindand/maven-tools-mcp)'s CI, as well as against the sample server in this repo. The HTTP client speaks the 2025-11-25 Streamable HTTP transport: it echoes the negotiated revision on every post-handshake request via `MCP-Protocol-Version`, captures and echoes `Mcp-Session-Id` when a server issues one, and handles both plain JSON and SSE response modes.
 
 ## Relationship to official tooling
 
@@ -90,6 +90,11 @@ The [2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28) revis
 initialize handshake with `server/discover` and `_meta`-carried versions, drops `Mcp-Session-Id`,
 and replaces the GET listening stream with `subscriptions/listen`. That is a separate client, and
 it is **not implemented yet** — it is the next major piece of work here.
+
+## Development
+
+Maintained by one person with AI assistance. Where AI tooling contributed is logged per
+release and per contribution in [docs/ai-maintenance-log.md](docs/ai-maintenance-log.md).
 
 ## License
 

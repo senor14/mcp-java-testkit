@@ -5,6 +5,12 @@ where AI tooling materially contributed, per entry. Every AI-assisted change is 
 run, and verified by the maintainer before it lands; entries link to the public
 commit / PR / issue / release they refer to.
 
+The design decisions are the maintainer's: an SDK-independent wire-level client rather than a
+wrapper, assertions that live in the consumer's own JUnit suite, contract snapshots kept in
+version control, and what belongs in scope at all. So is the reading of the spec text that
+findings are checked against, and every merge and release. **This table records where AI tooling
+did drafting or investigation work — it is not a record of who decided what.**
+
 Tools used to date: **Claude Code** (Anthropic — Opus/Sonnet/Haiku models, per-task tiering).
 
 | Date | Tool | Work | Public artifact |

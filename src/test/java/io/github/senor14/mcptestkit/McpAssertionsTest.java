@@ -72,6 +72,30 @@ class McpAssertionsTest {
     }
 
     @Test
+    void failsOnPropertyTypeThatIsNotAJsonSchemaType() {
+        McpTestClient client = new FakeMcpTestClient(true).withTool("""
+                {"name": "typo", "description": "x",
+                 "inputSchema": {"type": "object",
+                                 "properties": {"count": {"type": "int"}}}}""");
+        AssertionError error = assertThrows(AssertionError.class,
+                () -> McpAssertions.assertThat(client).toolSchemasAreValid());
+        assertTrue(error.getMessage().contains("count"));
+        assertTrue(error.getMessage().contains("'int'"));
+    }
+
+    @Test
+    void acceptsPropertiesThatDeclareNoTypeOrAUnionType() {
+        // $ref / anyOf / enum schemas carry no `type`; a union type is a legal array of types.
+        McpTestClient client = new FakeMcpTestClient(true).withTool("""
+                {"name": "fine", "description": "x",
+                 "inputSchema": {"type": "object",
+                                 "properties": {"a": {"$ref": "#/$defs/x"},
+                                                "b": {"enum": ["one", "two"]},
+                                                "c": {"type": ["string", "null"]}}}}""");
+        McpAssertions.assertThat(client).toolSchemasAreValid();
+    }
+
+    @Test
     void failsWhenOverTokenBudget() {
         McpTestClient client = new FakeMcpTestClient(true)
                 .withTool("{\"name\": \"big\", \"description\": \"" + "word ".repeat(500) + "\"}");

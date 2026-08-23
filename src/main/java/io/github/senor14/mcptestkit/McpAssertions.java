@@ -30,6 +30,10 @@ public final class McpAssertions {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final Set<String> VALID_MESSAGE_ROLES = Set.of("user", "assistant");
 
+    /** The seven types JSON Schema defines; anything else in a {@code type} is a typo. */
+    private static final Set<String> JSON_SCHEMA_TYPES =
+            Set.of("string", "number", "integer", "boolean", "object", "array", "null");
+
     private final McpTestClient client;
 
     private McpAssertions(McpTestClient client) {
@@ -472,6 +476,40 @@ public final class McpAssertions {
                             + "' is not declared in " + schemaKind + ".properties");
                 }
             }
+        }
+        if (properties.isObject()) {
+            properties.fields().forEachRemaining(property ->
+                    collectPropertyProblems(owner, schemaKind, property.getKey(), property.getValue(), problems));
+        }
+    }
+
+    /**
+     * Checks one declared property. A property schema must be an object, and when it declares
+     * a {@code type} that type must be one JSON Schema actually defines — {@code "String"},
+     * {@code "int"} and plain typos are the common way a hand-written tool schema goes wrong,
+     * and a client that trusts the declared type will build the wrong argument. Schemas that
+     * describe themselves some other way ({@code $ref}, {@code anyOf}, {@code enum}) declare no
+     * {@code type} and are left alone.
+     */
+    private static void collectPropertyProblems(String owner, String schemaKind, String property,
+                                                JsonNode propertySchema, List<String> problems) {
+        String where = owner + ": " + schemaKind + ".properties." + property;
+        if (!propertySchema.isObject()) {
+            problems.add(where + " is not a JSON object");
+            return;
+        }
+        JsonNode type = propertySchema.path("type");
+        if (type.isTextual()) {
+            reportUnknownType(where, type.asText(), problems);
+        } else if (type.isArray()) {
+            type.forEach(entry -> reportUnknownType(where, entry.asText(), problems));
+        }
+    }
+
+    private static void reportUnknownType(String where, String declaredType, List<String> problems) {
+        if (!JSON_SCHEMA_TYPES.contains(declaredType)) {
+            problems.add(where + ".type is '" + declaredType + "', which is not a JSON Schema type "
+                    + JSON_SCHEMA_TYPES);
         }
     }
 
