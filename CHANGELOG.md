@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Snapshot failures are summarized by category.** When a tool-list snapshot mismatches,
+  the failure now reports removed tools, added tools, changes to model-read text
+  (description/title/annotations), and structural changes with paths — instead of dumping two
+  full JSON documents (~6k tokens on real servers). The assertion still fails on any difference;
+  the categories say *where* the change is, not whether it is safe. Non-tool-list snapshots
+  keep the full dump.
+- **Token-budget failures name where the bytes live.** The list-level gate ranks the largest
+  tools; the per-tool gate breaks each offender down by top-level field (chars as the primary
+  fact, tokens as a chars/4 estimate). On measured servers the schemas — not the descriptions —
+  carry most of the weight, so the message now points at the field to trim.
+
 - **Tool schemas are checked one level deeper.** `toolSchemasAreValid()` and
   `toolOutputSchemasAreValid()` now inspect each declared property: a property schema must be an
   object, and a declared `type` must be one JSON Schema actually defines. `{"type": "int"}` and

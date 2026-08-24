@@ -99,8 +99,26 @@ class McpAssertionsTest {
     void failsWhenOverTokenBudget() {
         McpTestClient client = new FakeMcpTestClient(true)
                 .withTool("{\"name\": \"big\", \"description\": \"" + "word ".repeat(500) + "\"}");
-        assertThrows(AssertionError.class,
+        AssertionError error = assertThrows(AssertionError.class,
                 () -> McpAssertions.assertThat(client).toolListWithinTokenBudget(50));
+        assertTrue(error.getMessage().contains("Largest tools"), error.getMessage());
+        assertTrue(error.getMessage().contains("big"), error.getMessage());
+        assertTrue(error.getMessage().contains("description"), error.getMessage());
+        assertTrue(error.getMessage().contains("chars"), error.getMessage());
+    }
+
+    @Test
+    void perToolBudgetFailureNamesTheHeavyField() {
+        McpTestClient client = new FakeMcpTestClient(true).withTool(
+                "{\"name\": \"heavy\", \"description\": \"tiny\", \"inputSchema\": {\"type\": \"object\","
+                        + " \"properties\": {\"a\": {\"type\": \"string\", \"enum\": ["
+                        + "\"v".repeat(1) + "1\"" + ", \"v2\"".repeat(300) + "]}}}}");
+        AssertionError error = assertThrows(AssertionError.class,
+                () -> McpAssertions.assertThat(client).eachToolWithinTokenBudget(100));
+        String message = error.getMessage();
+        assertTrue(message.contains("heavy"), message);
+        assertTrue(message.contains("inputSchema"), message);
+        assertTrue(message.contains("%"), message);
     }
 
     @Test

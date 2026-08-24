@@ -200,32 +200,66 @@ public final class McpAssertions {
      * directly taxes every user of the server.
      */
     public McpAssertions toolListWithinTokenBudget(int maxTokens) {
-        String json = toJson(client.listTools());
-        int estimate = TokenEstimator.estimate(json);
+        List<JsonNode> tools = client.listTools();
+        int estimate = TokenEstimator.estimate(toJson(tools));
         if (estimate > maxTokens) {
-            throw new AssertionError("Tool list is ~" + estimate + " tokens (budget: " + maxTokens
-                    + "). Trim tool descriptions or split the server.");
+            StringBuilder message = new StringBuilder("Tool list is ~" + estimate
+                    + " est. tokens (budget: " + maxTokens + "). Largest tools:\n");
+            tools.stream()
+                    .sorted((a, b) -> Integer.compare(toJson(b).length(), toJson(a).length()))
+                    .limit(5)
+                    .forEach(tool -> message.append("  ")
+                            .append(tool.path("name").asText("<unnamed>"))
+                            .append(": ").append(toolCostLine(tool)).append('\n'));
+            throw new AssertionError(message.toString());
         }
         return this;
     }
 
     /**
      * Asserts each individual tool definition stays within an estimated token budget,
-     * pinpointing the offender — complements {@link #toolListWithinTokenBudget(int)}.
+     * pinpointing the offender and where its bytes live — complements
+     * {@link #toolListWithinTokenBudget(int)}.
      */
     public McpAssertions eachToolWithinTokenBudget(int maxTokensPerTool) {
         List<String> offending = new ArrayList<>();
         for (JsonNode tool : client.listTools()) {
             int estimate = TokenEstimator.estimate(toJson(tool));
             if (estimate > maxTokensPerTool) {
-                offending.add(tool.path("name").asText("<unnamed>") + " (~" + estimate + " tokens)");
+                offending.add(tool.path("name").asText("<unnamed>") + ": " + toolCostLine(tool));
             }
         }
         if (!offending.isEmpty()) {
             throw new AssertionError("Tools over the per-tool budget of " + maxTokensPerTool
-                    + " tokens: " + offending);
+                    + " est. tokens:\n  " + String.join("\n  ", offending));
         }
         return this;
+    }
+
+    /**
+     * One line describing where a tool definition's bytes live: serialized characters as the
+     * primary fact (token counts are a chars/4 estimate), split by top-level field. In measured
+     * servers the schemas — not the descriptions — carry most of the weight, so the split names
+     * the field to trim rather than leaving it to guesswork.
+     */
+    private static String toolCostLine(JsonNode tool) {
+        int total = toJson(tool).length();
+        List<Map.Entry<String, Integer>> fields = new ArrayList<>();
+        tool.fields().forEachRemaining(field ->
+                fields.add(Map.entry(field.getKey(), field.getValue().toString().length())));
+        fields.sort((a, b) -> Integer.compare(b.getValue(), a.getValue()));
+        StringBuilder line = new StringBuilder()
+                .append(total).append(" chars (~").append(TokenEstimator.estimate(toJson(tool)))
+                .append(" est. tokens): ");
+        for (int i = 0; i < Math.min(3, fields.size()); i++) {
+            if (i > 0) {
+                line.append(", ");
+            }
+            Map.Entry<String, Integer> field = fields.get(i);
+            line.append(field.getKey()).append(' ').append(field.getValue())
+                    .append(" chars (").append(Math.round(100.0 * field.getValue() / total)).append("%)");
+        }
+        return line.toString();
     }
 
     /** Asserts calling the tool returns a non-error result. */
