@@ -31,6 +31,10 @@ Most MCP test tooling runs *against* your server from the outside — the offici
 testImplementation 'io.github.senor14:mcp-java-testkit:0.5.1'
 ```
 
+```kotlin
+testImplementation("io.github.senor14:mcp-java-testkit:0.5.1")
+```
+
 > Pre-1.0: minor releases may still evolve the API.
 
 ## Quick start
@@ -57,6 +61,21 @@ class MyServerConformanceTest {
     void staysWithinTokenBudget(McpTestClient client) {
         McpAssertions.assertThat(client)
             .toolListWithinTokenBudget(2_000);
+    }
+}
+```
+
+Kotlin tests use the same JUnit 5 extension:
+
+```kotlin
+@McpServerTest(command = ["java", "-jar", "build/libs/my-mcp-server.jar"])
+class MyServerConformanceTest {
+    @Test
+    fun `server conforms to the protocol`(client: McpTestClient) {
+        McpAssertions.assertThat(client)
+            .initializesSuccessfully()
+            .hasTools()
+            .toolSchemasAreValid()
     }
 }
 ```
