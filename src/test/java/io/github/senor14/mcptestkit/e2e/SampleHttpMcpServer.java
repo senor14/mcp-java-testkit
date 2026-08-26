@@ -34,6 +34,8 @@ final class SampleHttpMcpServer implements AutoCloseable {
     private final HttpServer server;
     private final boolean sse;
     private final boolean withSession;
+    /** After writing the SSE response, hold the stream open this long (0 = close immediately). */
+    private final long keepStreamOpenMillis;
     /** Id of the server-initiated ping interleaved into SSE responses. */
     static final String PING_ID = "server-ping-http";
 
@@ -44,8 +46,13 @@ final class SampleHttpMcpServer implements AutoCloseable {
     private volatile String lastProtocolVersionHeader;
 
     SampleHttpMcpServer(boolean sse, boolean withSession) throws IOException {
+        this(sse, withSession, 0);
+    }
+
+    SampleHttpMcpServer(boolean sse, boolean withSession, long keepStreamOpenMillis) throws IOException {
         this.sse = sse;
         this.withSession = withSession;
+        this.keepStreamOpenMillis = keepStreamOpenMillis;
         this.server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         this.server.createContext("/mcp", this::handleExchange);
         this.server.start();
@@ -80,7 +87,8 @@ final class SampleHttpMcpServer implements AutoCloseable {
     }
 
     private void handleExchange(HttpExchange exchange) throws IOException {
-        try (exchange) {
+        boolean handedOff = false;
+        try {
             if ("DELETE".equals(exchange.getRequestMethod())) {
                 sessionDeleted.set(true);
                 exchange.sendResponseHeaders(204, -1);
@@ -141,10 +149,43 @@ final class SampleHttpMcpServer implements AutoCloseable {
                     ping.put("method", "ping");
                     interleaved += "event: message\ndata: " + MAPPER.writeValueAsString(ping) + "\n\n";
                 }
-                respond(exchange, 200, "text/event-stream",
-                        interleaved + "event: message\ndata: " + json + "\n\n");
+                String sseBody = interleaved + "event: message\ndata: " + json + "\n\n";
+                if (keepStreamOpenMillis > 0 && !isInitialize) {
+                    // The spec says servers SHOULD close the stream after the response;
+                    // this mode imitates the ones that keep it open with keep-alives
+                    // instead (java-sdk streamable), so the client's return must come
+                    // from the response event, not from stream EOF.
+                    exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
+                    exchange.sendResponseHeaders(200, 0);
+                    OutputStream out = exchange.getResponseBody();
+                    out.write(sseBody.getBytes(StandardCharsets.UTF_8));
+                    out.flush();
+                    handedOff = true;
+                    Thread holder = new Thread(() -> {
+                        try {
+                            long end = System.currentTimeMillis() + keepStreamOpenMillis;
+                            while (System.currentTimeMillis() < end) {
+                                Thread.sleep(250);
+                                out.write(": keep-alive\n\n".getBytes(StandardCharsets.UTF_8));
+                                out.flush();
+                            }
+                        } catch (Exception ignored) {
+                            // client closed the connection first — expected
+                        } finally {
+                            exchange.close();
+                        }
+                    });
+                    holder.setDaemon(true);
+                    holder.start();
+                    return;
+                }
+                respond(exchange, 200, "text/event-stream", sseBody);
             } else {
                 respond(exchange, 200, "application/json", json);
+            }
+        } finally {
+            if (!handedOff) {
+                exchange.close();
             }
         }
     }

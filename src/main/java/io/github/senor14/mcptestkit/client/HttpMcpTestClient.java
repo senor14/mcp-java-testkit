@@ -72,22 +72,77 @@ public final class HttpMcpTestClient extends AbstractMcpTestClient {
 
     @Override
     protected JsonNode performRequest(long id, String method, ObjectNode params) {
-        HttpResponse<String> response = post(requestEnvelope(id, method, params));
-        if (response.statusCode() / 100 != 2) {
-            throw new IllegalStateException("MCP endpoint " + endpoint + " returned HTTP "
-                    + response.statusCode() + " for " + method + ": " + response.body());
+        HttpResponse<java.io.InputStream> response = post(requestEnvelope(id, method, params));
+        try (java.io.InputStream body = response.body()) {
+            if (response.statusCode() / 100 != 2) {
+                throw new IllegalStateException("MCP endpoint " + endpoint + " returned HTTP "
+                        + response.statusCode() + " for " + method + ": " + readAll(body));
+            }
+            captureSessionId(response);
+            String contentType = response.headers().firstValue("Content-Type").orElse("");
+            if (contentType.startsWith("text/event-stream")) {
+                // The spec says servers SHOULD terminate the stream after the response —
+                // some (java-sdk streamable with keep-alives) keep it open instead, so the
+                // stream must be consumed event by event and left as soon as the response
+                // arrives. Reading to EOF here hangs forever on such servers.
+                return readSseUntilResponse(body, id, method);
+            }
+            JsonNode message = MAPPER.readTree(readAll(body));
+            return message;
+        } catch (IOException e) {
+            throw new UncheckedIOException("Invalid response from MCP endpoint " + endpoint
+                    + " for " + method, e);
         }
-        captureSessionId(response);
-        return extractResponseMessage(response, id, method);
     }
 
     @Override
     protected void sendNotification(String method) {
-        HttpResponse<String> response = post(notificationEnvelope(method));
-        if (response.statusCode() / 100 != 2) {
-            throw new IllegalStateException("MCP endpoint " + endpoint + " returned HTTP "
-                    + response.statusCode() + " for notification " + method);
+        HttpResponse<java.io.InputStream> response = post(notificationEnvelope(method));
+        // Close without draining: a server may answer a notification POST with an
+        // open SSE stream, and reading it to EOF would block.
+        try (java.io.InputStream body = response.body()) {
+            if (response.statusCode() / 100 != 2) {
+                throw new IllegalStateException("MCP endpoint " + endpoint + " returned HTTP "
+                        + response.statusCode() + " for notification " + method);
+            }
+        } catch (IOException ignored) {
+            // Closing an already-broken stream is not a test failure.
         }
+    }
+
+    /**
+     * Consumes an SSE body line by line, answering interleaved server requests and
+     * recording notifications, and returns as soon as the response with {@code id}
+     * arrives — the stream is then closed by the caller, open or not. A deadline
+     * bounds the wait so a server that never sends the response fails the test with
+     * a message instead of hanging the build (the request-level timeout only covers
+     * response headers, not body streaming).
+     */
+    private JsonNode readSseUntilResponse(java.io.InputStream body, long id, String method) throws IOException {
+        java.io.BufferedReader reader = new java.io.BufferedReader(
+                new java.io.InputStreamReader(body, java.nio.charset.StandardCharsets.UTF_8));
+        long deadline = System.nanoTime() + timeout.toNanos();
+        String line;
+        while ((line = reader.readLine()) != null) {
+            if (System.nanoTime() > deadline) {
+                break;
+            }
+            String stripped = line.strip();
+            if (!stripped.startsWith("data:")) {
+                continue;
+            }
+            JsonNode message = recordSseData(stripped.substring(5).strip());
+            if (message != null && message.path("id").asLong(-1) == id && !message.has("method")) {
+                return message;
+            }
+        }
+        throw new IllegalStateException("SSE stream from " + endpoint + " "
+                + (line == null ? "ended" : "exceeded the " + timeout.toSeconds() + "s timeout")
+                + " without a response to " + method);
+    }
+
+    private static String readAll(java.io.InputStream body) throws IOException {
+        return new String(body.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
     }
 
     @Override
@@ -107,12 +162,12 @@ public final class HttpMcpTestClient extends AbstractMcpTestClient {
         }
     }
 
-    private HttpResponse<String> post(JsonNode message) {
+    private HttpResponse<java.io.InputStream> post(JsonNode message) {
         try {
             HttpRequest request = builder()
                     .POST(HttpRequest.BodyPublishers.ofString(MAPPER.writeValueAsString(message)))
                     .build();
-            return http.send(request, HttpResponse.BodyHandlers.ofString());
+            return http.send(request, HttpResponse.BodyHandlers.ofInputStream());
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to POST to MCP endpoint " + endpoint, e);
         } catch (InterruptedException e) {
@@ -139,41 +194,8 @@ public final class HttpMcpTestClient extends AbstractMcpTestClient {
         return requestBuilder;
     }
 
-    private void captureSessionId(HttpResponse<String> response) {
+    private void captureSessionId(HttpResponse<?> response) {
         response.headers().firstValue("Mcp-Session-Id").ifPresent(id -> sessionId = id);
-    }
-
-    /**
-     * Extracts the JSON-RPC response with the given id from either a plain JSON body or
-     * an SSE stream body ({@code data:} lines). Server-initiated notifications
-     * interleaved in the stream are recorded, not dropped.
-     */
-    private JsonNode extractResponseMessage(HttpResponse<String> response, long id, String method) {
-        String contentType = response.headers().firstValue("Content-Type").orElse("");
-        try {
-            if (contentType.startsWith("text/event-stream")) {
-                JsonNode matched = null;
-                for (String line : response.body().split("\n")) {
-                    line = line.strip();
-                    if (!line.startsWith("data:")) {
-                        continue;
-                    }
-                    JsonNode message = recordSseData(line.substring(5).strip());
-                    if (message != null && message.path("id").asLong(-1) == id && !message.has("method")) {
-                        matched = message;
-                    }
-                }
-                if (matched == null) {
-                    throw new IllegalStateException("SSE stream from " + endpoint
-                            + " ended without a response to " + method);
-                }
-                return matched;
-            }
-            return MAPPER.readTree(response.body());
-        } catch (IOException e) {
-            throw new UncheckedIOException("Invalid JSON from MCP endpoint " + endpoint
-                    + " for " + method + ": " + response.body(), e);
-        }
     }
 
     /**

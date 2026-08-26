@@ -62,6 +62,24 @@ class HttpMcpServerEndToEndTest {
     }
 
     @Test
+    void returnsOnTheResponseEventEvenWhenTheStreamStaysOpen() throws Exception {
+        // The spec says servers SHOULD terminate the SSE stream after the response; some
+        // keep it open with keep-alives instead. The client must return when the response
+        // event arrives, not when the stream ends — reading to EOF here means hanging until
+        // the server gives up (observed: a java-sdk streamable server holding a test for hours).
+        try (SampleHttpMcpServer server = new SampleHttpMcpServer(true, false, 4_000);
+             HttpMcpTestClient client = HttpMcpTestClient.connect(
+                     URI.create(server.endpoint()), Map.of(), TIMEOUT)) {
+            long start = System.nanoTime();
+            client.listTools();
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+            assertTrue(elapsedMs < 2_000,
+                    "should return on the response event while the stream is still open; took "
+                            + elapsedMs + " ms against a 4s hold");
+        }
+    }
+
+    @Test
     void answersServerPingOverHttpWithAnEmptyResult() throws Exception {
         // The spec requires the receiver of a ping to answer with an empty result. Staying silent
         // is what makes a server conclude the peer is dead, so an unanswered ping is worse than an
