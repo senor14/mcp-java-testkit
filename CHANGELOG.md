@@ -1,7 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 — 2026-08-26
 
+- **The HTTP client no longer hangs on servers that keep the SSE stream open.** The spec says
+  servers SHOULD terminate the response stream after the response; java-sdk streamable servers
+  keep it open with keep-alives instead. The client buffered the whole body before parsing, so
+  against such servers it blocked until the server gave up — observed as a JenkinsRule-hosted
+  java-sdk 2.0.0 server holding one test for hours (the request-level timeout only covers
+  response headers, not body streaming). SSE bodies are now consumed event by event with a
+  deadline, returning the moment the matching response arrives; notification POSTs close their
+  body without draining for the same reason. Found by running the conformance IT against a real
+  java-sdk server; regression-tested against a sample server that holds the stream open with
+  keep-alives.
 - **Docs**: Gradle Kotlin DSL install snippet and a Kotlin quick start —
   the project's first external contribution, by [@adity982](https://github.com/adity982) (#16).
 
