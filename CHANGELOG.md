@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Docs**: Gradle Kotlin DSL install snippet and a Kotlin quick start —
+  the project's first external contribution, by [@adity982](https://github.com/adity982) (#16).
+
 - **Snapshot failures are summarized by category.** When a tool-list snapshot mismatches,
   the failure now reports removed tools, added tools, changes to model-read text
   (description/title/annotations), and structural changes with paths — instead of dumping two
