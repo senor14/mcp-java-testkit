@@ -65,6 +65,13 @@ class MyServerConformanceTest {
 }
 ```
 
+The `command` form is a black-box test: it launches whatever you point it at as a child process
+and speaks the wire protocol over its stdin/stdout, so startup arguments, packaging, and stdio
+handling are all exercised. One consequence: a packaged jar only exists after Maven's `package`
+phase, which runs *after* surefire's `test` phase — so a test that launches `target/*.jar`
+belongs under failsafe (name it `*IT`, run `mvn verify`), or launch the classes directory instead
+(`java -cp target/classes ...`) if you want it in the surefire run.
+
 Kotlin tests use the same JUnit 5 extension:
 
 ```kotlin
