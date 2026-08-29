@@ -40,7 +40,7 @@ testImplementation("io.github.senor14:mcp-java-testkit:0.6.0")
 ## Quick start
 
 ```java
-// *IT: runs under failsafe (mvn verify) — the jar is built in the package phase, after surefire
+// *IT: runs under failsafe (mvn verify) — the jar only exists after the package phase, which runs after surefire
 @McpServerTest(command = {"java", "-jar", "target/my-mcp-server.jar"})
 class MyServerConformanceIT {
 
@@ -70,9 +70,13 @@ The `command` form is a black-box test: it launches whatever you point it at as 
 and speaks the wire protocol over its stdin/stdout, so startup arguments, packaging, and stdio
 handling are all exercised. A packaged jar only exists after the build has produced it — in Maven
 that is the `package` phase, which runs *after* surefire's `test` phase, so a test that launches
-`target/*.jar` belongs under failsafe (`*IT`, `mvn verify`). With Gradle, make the test task
-depend on whichever task builds the jar (`jar` or `bootJar`). For a fast in-JVM run on every
-`test`, use the `spring:` mode below.
+`target/*.jar` belongs under failsafe (`*IT`, `mvn verify` — and `maven-failsafe-plugin` has to be
+bound in your pom; it is not part of the default lifecycle, and surefire silently skips `*IT`
+classes). With Gradle, make the test task depend on whichever task builds the jar (`jar` or
+`bootJar`). To stay inside the plain `test` run instead: a Spring Boot server can use the `spring:`
+mode below, and any server can be launched straight from the test classpath, no jar needed —
+`command = {"${java.home}/bin/java", "-cp", "${java.class.path}", "com.example.MyServerMain"}`
+(`${...}` expands system properties; this repo's own end-to-end test runs that way).
 
 Kotlin tests use the same JUnit 5 extension:
 
