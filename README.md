@@ -6,7 +6,7 @@
 
 **Testing toolkit for MCP (Model Context Protocol) servers on the JVM.**
 
-Most MCP test tooling runs *against* your server from the outside — the official inspector, conformance CLIs, scanners like mcp-observatory. `mcp-java-testkit` brings this in-process on the JVM: SDK-independent, wire-level assertions that live in your own JUnit suite, run on every `mvn test`, and fail the build when your protocol surface changes:
+Most MCP test tooling runs *against* your server from the outside — the official inspector, conformance CLIs, scanners like mcp-observatory. `mcp-java-testkit` brings this in-process on the JVM: SDK-independent, wire-level assertions that live in your own JUnit suite, run in your own build, and fail it when your protocol surface changes:
 
 - **JUnit 5 extension** — spin up your MCP server for a test class, get an injected test client, tear everything down cleanly.
 - **Conformance checks** — 26 fluent assertions across the initialize handshake, capabilities, tools (schemas, naming, structured output), resources, prompts, and error paths (2025-11-25 revision).
@@ -40,8 +40,9 @@ testImplementation("io.github.senor14:mcp-java-testkit:0.6.0")
 ## Quick start
 
 ```java
+// *IT: runs under failsafe (mvn verify) — the jar is built in the package phase, after surefire
 @McpServerTest(command = {"java", "-jar", "target/my-mcp-server.jar"})
-class MyServerConformanceTest {
+class MyServerConformanceIT {
 
     @Test
     void conformsToSpec(McpTestClient client) {
@@ -67,14 +68,16 @@ class MyServerConformanceTest {
 
 The `command` form is a black-box test: it launches whatever you point it at as a child process
 and speaks the wire protocol over its stdin/stdout, so startup arguments, packaging, and stdio
-handling are all exercised. One consequence: a packaged jar only exists after Maven's `package`
-phase, which runs *after* surefire's `test` phase — so a test that launches `target/*.jar`
-belongs under failsafe (name it `*IT`, run `mvn verify`), or launch the classes directory instead
-(`java -cp target/classes ...`) if you want it in the surefire run.
+handling are all exercised. A packaged jar only exists after the build has produced it — in Maven
+that is the `package` phase, which runs *after* surefire's `test` phase, so a test that launches
+`target/*.jar` belongs under failsafe (`*IT`, `mvn verify`). With Gradle, make the test task
+depend on whichever task builds the jar (`jar` or `bootJar`). For a fast in-JVM run on every
+`test`, use the `spring:` mode below.
 
 Kotlin tests use the same JUnit 5 extension:
 
 ```kotlin
+// Gradle: make the test task depend on the task that builds this jar
 @McpServerTest(command = ["java", "-jar", "build/libs/my-mcp-server.jar"])
 class MyServerConformanceTest {
     @Test
@@ -104,7 +107,7 @@ No Spring dependency is pulled in — the port lookup is reflective and only act
 
 ## Relationship to official tooling
 
-- The official [conformance](https://github.com/modelcontextprotocol/conformance) suite validates protocol compliance as a CLI/GitHub Action. This project is the **JUnit-native layer**: it runs inside `mvn test` on every build and adds project-specific contract and regression checks a generic runner cannot know about. Use both.
+- The official [conformance](https://github.com/modelcontextprotocol/conformance) suite validates protocol compliance as a CLI/GitHub Action. This project is the **JUnit-native layer**: it runs inside your own build on every change and adds project-specific contract and regression checks a generic runner cannot know about. Use both.
 - The official [java-sdk](https://github.com/modelcontextprotocol/java-sdk) publishes `mcp-test`, the shared fixtures its own integration tests use. Those are built for testing the SDK itself and tie your test code to it. `mcp-java-testkit` speaks the wire protocol directly, so it can test servers built on **any** SDK — or any language — and what it asserts is what a client actually receives.
 
 ### Spec revision
