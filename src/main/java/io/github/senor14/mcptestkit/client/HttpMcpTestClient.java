@@ -78,16 +78,18 @@ public final class HttpMcpTestClient extends AbstractMcpTestClient {
         HttpResponse<java.io.InputStream> response = post(requestEnvelope(id, method, params));
         try (java.io.InputStream body = response.body()) {
             if (response.statusCode() / 100 != 2) {
+                String prefix = "MCP endpoint " + endpoint + " returned HTTP " + response.statusCode()
+                        + " for " + method + ": ";
                 String detail;
                 try {
                     detail = readAll(body, method, deadline);
                 } catch (IOException | IllegalStateException e) {
                     // The status code is the fact that matters; never lose it to a body
-                    // that stalls or breaks.
-                    detail = "(error body could not be read: " + e.getMessage() + ")";
+                    // that stalls or breaks — but keep the reason as the cause.
+                    throw new IllegalStateException(prefix + "(error body could not be read: "
+                            + e.getMessage() + ")", e);
                 }
-                throw new IllegalStateException("MCP endpoint " + endpoint + " returned HTTP "
-                        + response.statusCode() + " for " + method + ": " + detail);
+                throw new IllegalStateException(prefix + detail);
             }
             captureSessionId(response);
             String contentType = response.headers().firstValue("Content-Type").orElse("");

@@ -130,6 +130,8 @@ class HttpMcpServerEndToEndTest {
             long elapsedMs = (System.nanoTime() - start) / 1_000_000;
             assertTrue(failure.getMessage().contains("returned HTTP 500"),
                     "should keep the status code, got: " + failure.getMessage());
+            assertTrue(failure.getCause() != null && failure.getCause().getMessage().contains("exceeded the 1s timeout"),
+                    "should keep the body-read failure as the cause, got: " + failure.getCause());
             assertTrue(elapsedMs < 3_000, "should fail at the 1s deadline; took " + elapsedMs + " ms");
         }
     }

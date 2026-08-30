@@ -42,7 +42,7 @@ gpg --keyserver keyserver.ubuntu.com --send-keys <KEYID>
 #      signs with the newest signing-capable subkey, and Central then looks the key up
 #      by the SUBKEY fingerprint — which keys.openpgp.org cannot serve and Ubuntu may
 #      not have indexed yet, failing validation with "Could not find a public key".
-mvn -B -Prelease "-Dgpg.executable=C:\Program Files\Git\usr\bin\gpg.exe" "-Dgpg.keyname=158E856D5A08A0D4DF28EA0A90963797DDB4DB38!" deploy
+mvn -B clean -Prelease "-Dgpg.executable=C:\Program Files\Git\usr\bin\gpg.exe" "-Dgpg.keyname=158E856D5A08A0D4DF28EA0A90963797DDB4DB38!" deploy
 # 3. Tag and push
 git tag -a v0.1.0 -m "v0.1.0"; git push origin v0.1.0
 # 4. Bump pom.xml to next 0.2.0-SNAPSHOT, commit
@@ -51,6 +51,10 @@ git tag -a v0.1.0 -m "v0.1.0"; git push origin v0.1.0
 Artifacts appear on https://central.sonatype.com/artifact/io.github.senor14/mcp-java-testkit within minutes; search indexing takes a few hours.
 
 Notes:
-- Local dry-run without credentials/GPG: `mvn -Prelease "-Dgpg.skip=true" "-DskipTests" package`
+- Local dry-run without credentials/GPG: `mvn clean -Prelease "-Dgpg.skip=true" "-DskipTests" package`
+- Always `clean` first: maven-javadoc-plugin writes `target/maven-javadoc-plugin-stale-data.txt` in the
+  platform charset (cp949 on this Windows box under JDK 17) but reads it back as UTF-8, and the repo path
+  contains non-ASCII, so any javadoc run after a previous one in the same `target/` fails with
+  `MalformedInputException`. CI never runs the release profile, so the dry-run is the only rehearsal.
 - On PowerShell, always quote `-D` flags containing dots.
 - Periodically check for a newer `central-publishing-maven-plugin` on central.sonatype.com.
