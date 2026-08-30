@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.0 — Unreleased
+## 0.7.0 — 2026-08-31
 
 - **The HTTP client's timeout now holds even when the server goes completely silent** — on SSE
   bodies, plain-JSON bodies and error bodies alike. 0.6.0 consumed SSE bodies event by event
