@@ -118,6 +118,53 @@ class HttpMcpServerEndToEndTest {
     }
 
     @Test
+    void keepsTheStatusCodeWhenAnErrorBodyGoesSilent() throws Exception {
+        // A 500 whose body never arrives: the failure must still say "HTTP 500" — a stalled
+        // error body reported only as a slow body sends the user debugging the wrong thing.
+        try (SampleHttpMcpServer server = new SampleHttpMcpServer(
+                     new SampleHttpMcpServer.Options().errorStatus(500).silentStallMillis(6_000));
+             HttpMcpTestClient client = HttpMcpTestClient.connect(
+                     URI.create(server.endpoint()), Map.of(), Duration.ofSeconds(1))) {
+            long start = System.nanoTime();
+            IllegalStateException failure = assertThrows(IllegalStateException.class, client::listTools);
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+            assertTrue(failure.getMessage().contains("returned HTTP 500"),
+                    "should keep the status code, got: " + failure.getMessage());
+            assertTrue(elapsedMs < 3_000, "should fail at the 1s deadline; took " + elapsedMs + " ms");
+        }
+    }
+
+    @Test
+    void boundsHeadersAndBodyWithOneClock() throws Exception {
+        // Headers arrive late, then the body stalls. One timeout must cover the whole
+        // exchange: with a fresh clock per phase this would take headers + timeout.
+        try (SampleHttpMcpServer server = new SampleHttpMcpServer(
+                     new SampleHttpMcpServer.Options().headerDelayMillis(2_000).silentStallMillis(6_000));
+             HttpMcpTestClient client = HttpMcpTestClient.connect(
+                     URI.create(server.endpoint()), Map.of(), Duration.ofSeconds(3))) {
+            long start = System.nanoTime();
+            IllegalStateException failure = assertThrows(IllegalStateException.class, client::listTools);
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+            assertTrue(failure.getMessage().contains("exceeded the 3s timeout"),
+                    "should report the timeout, got: " + failure.getMessage());
+            assertTrue(elapsedMs < 4_500,
+                    "should fail ~3s after the request was sent, not 2s + 3s; took " + elapsedMs + " ms");
+        }
+    }
+
+    @Test
+    void failsLoudlyOnAnEmptyJsonBody() throws Exception {
+        // An empty 200 used to parse to a missing node, and listTools() returned nothing.
+        try (SampleHttpMcpServer server = new SampleHttpMcpServer(new SampleHttpMcpServer.Options().emptyBody(true));
+             HttpMcpTestClient client = HttpMcpTestClient.connect(
+                     URI.create(server.endpoint()), Map.of(), TIMEOUT)) {
+            IllegalStateException failure = assertThrows(IllegalStateException.class, client::listTools);
+            assertTrue(failure.getMessage().contains("returned an empty body"),
+                    "should fail on the empty body, got: " + failure.getMessage());
+        }
+    }
+
+    @Test
     void closeReturnsWithinTheTimeoutWhenTheSessionDeleteNeverEnds() throws Exception {
         // The session DELETE is answered with headers and a body that never ends. The
         // request-level timeout covers headers only, so close() must bound the wait itself.

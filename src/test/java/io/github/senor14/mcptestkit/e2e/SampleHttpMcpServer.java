@@ -43,6 +43,12 @@ final class SampleHttpMcpServer implements AutoCloseable {
     private final long silentStallMillis;
     /** Answer session {@code DELETE} with headers and then hold the body open this long (0 = off). */
     private final long hangDeleteMillis;
+    /** Delay the response headers of post-handshake requests this long (0 = off). */
+    private final long headerDelayMillis;
+    /** Answer post-handshake requests with this HTTP status and a body that stalls (0 = off). */
+    private final int errorStatus;
+    /** Answer post-handshake JSON requests with a 200 and no body at all. */
+    private final boolean emptyBody;
     /** Id of the server-initiated ping interleaved into SSE responses. */
     static final String PING_ID = "server-ping-http";
 
@@ -51,6 +57,27 @@ final class SampleHttpMcpServer implements AutoCloseable {
     private final CountDownLatch pingAnswered = new CountDownLatch(1);
     private volatile String sessionId;
     private volatile String lastProtocolVersionHeader;
+
+    /** Misbehaviour knobs; every mode leaves the initialize handshake untouched. */
+    static final class Options {
+        boolean sse;
+        boolean withSession;
+        long keepStreamOpenMillis;
+        long silentStallMillis;
+        long hangDeleteMillis;
+        long headerDelayMillis;
+        int errorStatus;
+        boolean emptyBody;
+
+        Options sse(boolean value) { sse = value; return this; }
+        Options withSession(boolean value) { withSession = value; return this; }
+        Options keepStreamOpenMillis(long value) { keepStreamOpenMillis = value; return this; }
+        Options silentStallMillis(long value) { silentStallMillis = value; return this; }
+        Options hangDeleteMillis(long value) { hangDeleteMillis = value; return this; }
+        Options headerDelayMillis(long value) { headerDelayMillis = value; return this; }
+        Options errorStatus(int value) { errorStatus = value; return this; }
+        Options emptyBody(boolean value) { emptyBody = value; return this; }
+    }
 
     SampleHttpMcpServer(boolean sse, boolean withSession) throws IOException {
         this(sse, withSession, 0);
@@ -62,11 +89,19 @@ final class SampleHttpMcpServer implements AutoCloseable {
 
     SampleHttpMcpServer(boolean sse, boolean withSession, long keepStreamOpenMillis,
                         long silentStallMillis, long hangDeleteMillis) throws IOException {
-        this.sse = sse;
-        this.withSession = withSession;
-        this.keepStreamOpenMillis = keepStreamOpenMillis;
-        this.silentStallMillis = silentStallMillis;
-        this.hangDeleteMillis = hangDeleteMillis;
+        this(new Options().sse(sse).withSession(withSession).keepStreamOpenMillis(keepStreamOpenMillis)
+                .silentStallMillis(silentStallMillis).hangDeleteMillis(hangDeleteMillis));
+    }
+
+    SampleHttpMcpServer(Options options) throws IOException {
+        this.sse = options.sse;
+        this.withSession = options.withSession;
+        this.keepStreamOpenMillis = options.keepStreamOpenMillis;
+        this.silentStallMillis = options.silentStallMillis;
+        this.hangDeleteMillis = options.hangDeleteMillis;
+        this.headerDelayMillis = options.headerDelayMillis;
+        this.errorStatus = options.errorStatus;
+        this.emptyBody = options.emptyBody;
         this.server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         this.server.createContext("/mcp", this::handleExchange);
         this.server.start();
@@ -147,6 +182,32 @@ final class SampleHttpMcpServer implements AutoCloseable {
                             "{\"error\": \"missing or wrong Mcp-Session-Id\"}");
                     return;
                 }
+            }
+            // These knobs target post-handshake requests only; the initialized notification
+            // that completes the handshake must still be answered normally.
+            boolean postHandshakeRequest = !isInitialize && message.has("id");
+            if (postHandshakeRequest && headerDelayMillis > 0) {
+                try {
+                    Thread.sleep(headerDelayMillis);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("interrupted while delaying headers", e);
+                }
+            }
+            if (postHandshakeRequest && errorStatus > 0) {
+                // An error status whose body then stalls: the status must survive in the
+                // client's failure message even though the body never arrives.
+                exchange.getResponseHeaders().set("Content-Type", "text/plain");
+                exchange.sendResponseHeaders(errorStatus, 0);
+                exchange.getResponseBody().flush();
+                handedOff = true;
+                holdOpen(exchange, silentStallMillis, false);
+                return;
+            }
+            if (postHandshakeRequest && emptyBody) {
+                exchange.getResponseHeaders().set("Content-Type", "application/json");
+                exchange.sendResponseHeaders(200, -1);
+                return;
             }
             ObjectNode response = SampleMcpLogic.handle(message);
             if (response == null) {

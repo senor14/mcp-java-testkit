@@ -72,11 +72,22 @@ public final class HttpMcpTestClient extends AbstractMcpTestClient {
 
     @Override
     protected JsonNode performRequest(long id, String method, ObjectNode params) {
+        // One clock for the whole exchange: the request-level timeout bounds the headers,
+        // and whatever is left of it bounds the body.
+        long deadline = System.nanoTime() + timeout.toNanos();
         HttpResponse<java.io.InputStream> response = post(requestEnvelope(id, method, params));
         try (java.io.InputStream body = response.body()) {
             if (response.statusCode() / 100 != 2) {
+                String detail;
+                try {
+                    detail = readAll(body, method, deadline);
+                } catch (IOException | IllegalStateException e) {
+                    // The status code is the fact that matters; never lose it to a body
+                    // that stalls or breaks.
+                    detail = "(error body could not be read: " + e.getMessage() + ")";
+                }
                 throw new IllegalStateException("MCP endpoint " + endpoint + " returned HTTP "
-                        + response.statusCode() + " for " + method + ": " + readAll(body, method));
+                        + response.statusCode() + " for " + method + ": " + detail);
             }
             captureSessionId(response);
             String contentType = response.headers().firstValue("Content-Type").orElse("");
@@ -85,9 +96,9 @@ public final class HttpMcpTestClient extends AbstractMcpTestClient {
                 // some (java-sdk streamable with keep-alives) keep it open instead, so the
                 // stream must be consumed event by event and left as soon as the response
                 // arrives. Reading to EOF here hangs forever on such servers.
-                return readSseUntilResponse(body, id, method);
+                return readSseUntilResponse(body, id, method, deadline);
             }
-            String json = readAll(body, method);
+            String json = readAll(body, method, deadline);
             if (json.isBlank()) {
                 // An empty body would parse to a missing node and make every accessor return
                 // "nothing" — a silently passing test. Fail loudly instead.
@@ -120,14 +131,15 @@ public final class HttpMcpTestClient extends AbstractMcpTestClient {
      * Consumes an SSE body line by line, answering interleaved server requests and
      * recording notifications, and returns as soon as the response with {@code id}
      * arrives — the stream is then closed by the caller, open or not. The wait is bounded
-     * by the client timeout independently of whether the server keeps sending bytes: lines
-     * are read on a separate thread and polled with the remaining time, so a stream that
-     * goes completely silent fails the test with a message instead of hanging the build
-     * (the request-level timeout only covers response headers, not body streaming).
+     * by what is left of the request's timeout independently of whether the server keeps
+     * sending bytes: lines are read on a separate thread and polled with the remaining
+     * time, so a stream that goes completely silent fails the test with a message instead
+     * of hanging the build (the request-level timeout only covers response headers, not
+     * body streaming).
      */
-    private JsonNode readSseUntilResponse(java.io.InputStream body, long id, String method) throws IOException {
+    private JsonNode readSseUntilResponse(java.io.InputStream body, long id, String method, long deadline)
+            throws IOException {
         SseLines lines = SseLines.start(body);
-        long deadline = System.nanoTime() + timeout.toNanos();
         while (true) {
             long remaining = deadline - System.nanoTime();
             SseLines.Item item = remaining > 0 ? lines.poll(remaining) : null;
@@ -207,11 +219,17 @@ public final class HttpMcpTestClient extends AbstractMcpTestClient {
     }
 
     /**
-     * Reads a non-SSE body to its end within the client timeout. {@code readAllBytes()} has
-     * no deadline of its own and the request-level timeout covers headers only, so a server
-     * that sends headers and then stalls would otherwise block until it closes the socket.
+     * Reads a non-SSE body to its end within what is left of the request's timeout.
+     * {@code readAllBytes()} has no deadline of its own and the request-level timeout covers
+     * headers only, so a server that sends headers and then stalls would otherwise block
+     * until it closes the socket.
      */
-    private String readAll(java.io.InputStream body, String method) throws IOException {
+    private String readAll(java.io.InputStream body, String method, long deadline) throws IOException {
+        long remaining = deadline - System.nanoTime();
+        if (remaining <= 0) {
+            throw new IllegalStateException("Response body from " + endpoint + " exceeded the "
+                    + timeout.toSeconds() + "s timeout for " + method);
+        }
         CompletableFuture<byte[]> bytes = new CompletableFuture<>();
         Thread reader = new Thread(() -> {
             try {
@@ -223,7 +241,7 @@ public final class HttpMcpTestClient extends AbstractMcpTestClient {
         reader.setDaemon(true);
         reader.start();
         try {
-            return new String(bytes.get(timeout.toNanos(), java.util.concurrent.TimeUnit.NANOSECONDS),
+            return new String(bytes.get(remaining, java.util.concurrent.TimeUnit.NANOSECONDS),
                     java.nio.charset.StandardCharsets.UTF_8);
         } catch (java.util.concurrent.TimeoutException e) {
             throw new IllegalStateException("Response body from " + endpoint + " exceeded the "

@@ -8,9 +8,12 @@
   were read with `readAllBytes()`, which has no deadline at all — so a server that sent the
   response headers and then nothing (no response, no keep-alives) could still block a test for
   as long as it held the socket; the request-level timeout covers headers only. Bodies are now
-  read on a separate thread and awaited with the remaining time, so the timeout fires on its
-  own. A response landing right at the deadline is no longer discarded either, and an interrupt
-  while waiting is reported as an interrupt rather than as the server's timeout. (#18)
+  read on a separate thread and awaited with whatever is left of the request's timeout, counted
+  from when the request was sent — one clock bounds headers and body together, so a request
+  fails within the configured timeout instead of never. A response landing right at the deadline
+  is no longer discarded either, an interrupt while waiting is reported as an interrupt rather
+  than as the server's timeout, and a non-2xx answer whose error body stalls still reports its
+  status code. (#18)
 - **`close()` no longer hangs on a session `DELETE` whose body never ends**, and it re-sets the
   interrupt flag when interrupted instead of silently swallowing it — the guard in 0.6.0 ran
   after `InterruptedException` had already cleared the flag, so it could never fire. (#18)
