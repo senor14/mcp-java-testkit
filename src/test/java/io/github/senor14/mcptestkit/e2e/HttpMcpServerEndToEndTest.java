@@ -100,6 +100,24 @@ class HttpMcpServerEndToEndTest {
     }
 
     @Test
+    void failsWithinTheTimeoutWhenAJsonBodyGoesSilent() throws Exception {
+        // Same stall on the plain-JSON path. readAllBytes() has no deadline of its own and
+        // the request-level timeout covers headers only, so the client must bound the read.
+        try (SampleHttpMcpServer server = new SampleHttpMcpServer(false, false, 0, 6_000, 0);
+             HttpMcpTestClient client = HttpMcpTestClient.connect(
+                     URI.create(server.endpoint()), Map.of(), Duration.ofSeconds(1))) {
+            long start = System.nanoTime();
+            IllegalStateException failure = assertThrows(IllegalStateException.class, client::listTools);
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+            assertTrue(failure.getMessage().contains("exceeded the 1s timeout"),
+                    "should report the timeout, got: " + failure.getMessage());
+            assertTrue(elapsedMs < 3_000,
+                    "should fail at the 1s deadline, not when the server closes after 6s; took "
+                            + elapsedMs + " ms");
+        }
+    }
+
+    @Test
     void closeReturnsWithinTheTimeoutWhenTheSessionDeleteNeverEnds() throws Exception {
         // The session DELETE is answered with headers and a body that never ends. The
         // request-level timeout covers headers only, so close() must bound the wait itself.

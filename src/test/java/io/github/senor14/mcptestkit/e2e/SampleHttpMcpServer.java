@@ -199,6 +199,15 @@ final class SampleHttpMcpServer implements AutoCloseable {
                 }
                 respond(exchange, 200, "text/event-stream", sseBody);
             } else {
+                if (silentStallMillis > 0 && !isInitialize) {
+                    // Same stall on the plain-JSON path: headers, then nothing.
+                    exchange.getResponseHeaders().set("Content-Type", "application/json");
+                    exchange.sendResponseHeaders(200, 0);
+                    exchange.getResponseBody().flush();
+                    handedOff = true;
+                    holdOpen(exchange, silentStallMillis, false);
+                    return;
+                }
                 respond(exchange, 200, "application/json", json);
             }
         } finally {

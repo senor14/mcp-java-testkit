@@ -76,7 +76,7 @@ public final class HttpMcpTestClient extends AbstractMcpTestClient {
         try (java.io.InputStream body = response.body()) {
             if (response.statusCode() / 100 != 2) {
                 throw new IllegalStateException("MCP endpoint " + endpoint + " returned HTTP "
-                        + response.statusCode() + " for " + method + ": " + readAll(body));
+                        + response.statusCode() + " for " + method + ": " + readAll(body, method));
             }
             captureSessionId(response);
             String contentType = response.headers().firstValue("Content-Type").orElse("");
@@ -87,8 +87,14 @@ public final class HttpMcpTestClient extends AbstractMcpTestClient {
                 // arrives. Reading to EOF here hangs forever on such servers.
                 return readSseUntilResponse(body, id, method);
             }
-            JsonNode message = MAPPER.readTree(readAll(body));
-            return message;
+            String json = readAll(body, method);
+            if (json.isBlank()) {
+                // An empty body would parse to a missing node and make every accessor return
+                // "nothing" — a silently passing test. Fail loudly instead.
+                throw new IllegalStateException("MCP endpoint " + endpoint
+                        + " returned an empty body for " + method);
+            }
+            return MAPPER.readTree(json);
         } catch (IOException e) {
             throw new UncheckedIOException("Invalid response from MCP endpoint " + endpoint
                     + " for " + method, e);
@@ -126,6 +132,10 @@ public final class HttpMcpTestClient extends AbstractMcpTestClient {
             long remaining = deadline - System.nanoTime();
             SseLines.Item item = remaining > 0 ? lines.poll(remaining) : null;
             if (item == null) {
+                if (Thread.currentThread().isInterrupted()) {
+                    throw new IllegalStateException("Interrupted while waiting for the response to "
+                            + method + " from " + endpoint);
+                }
                 throw new IllegalStateException("SSE stream from " + endpoint + " exceeded the "
                         + timeout.toSeconds() + "s timeout without a response to " + method);
             }
@@ -196,8 +206,39 @@ public final class HttpMcpTestClient extends AbstractMcpTestClient {
         }
     }
 
-    private static String readAll(java.io.InputStream body) throws IOException {
-        return new String(body.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+    /**
+     * Reads a non-SSE body to its end within the client timeout. {@code readAllBytes()} has
+     * no deadline of its own and the request-level timeout covers headers only, so a server
+     * that sends headers and then stalls would otherwise block until it closes the socket.
+     */
+    private String readAll(java.io.InputStream body, String method) throws IOException {
+        CompletableFuture<byte[]> bytes = new CompletableFuture<>();
+        Thread reader = new Thread(() -> {
+            try {
+                bytes.complete(body.readAllBytes());
+            } catch (IOException e) {
+                bytes.completeExceptionally(e);
+            }
+        }, "mcp-testkit-body-reader");
+        reader.setDaemon(true);
+        reader.start();
+        try {
+            return new String(bytes.get(timeout.toNanos(), java.util.concurrent.TimeUnit.NANOSECONDS),
+                    java.nio.charset.StandardCharsets.UTF_8);
+        } catch (java.util.concurrent.TimeoutException e) {
+            throw new IllegalStateException("Response body from " + endpoint + " exceeded the "
+                    + timeout.toSeconds() + "s timeout for " + method);
+        } catch (java.util.concurrent.ExecutionException e) {
+            if (e.getCause() instanceof IOException io) {
+                throw io;
+            }
+            throw new IllegalStateException("Failed to read the response to " + method + " from " + endpoint,
+                    e.getCause());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while reading the response to " + method
+                    + " from " + endpoint, e);
+        }
     }
 
     @Override

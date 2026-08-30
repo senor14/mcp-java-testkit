@@ -2,15 +2,20 @@
 
 ## 0.7.0 — Unreleased
 
-- **The HTTP client's timeout now holds even when the server goes completely silent.** 0.6.0
-  consumed SSE bodies event by event with a deadline, but the deadline was only checked after
-  a line arrived — a server that sent the response headers and then nothing at all (no
-  response, no keep-alives) could still block a test for as long as it held the socket. Lines
-  are now read on a separate thread and awaited with the remaining time, so the timeout fires
-  on its own. A response landing right at the deadline is no longer discarded either. (#18)
+- **The HTTP client's timeout now holds even when the server goes completely silent** — on SSE
+  bodies, plain-JSON bodies and error bodies alike. 0.6.0 consumed SSE bodies event by event
+  with a deadline, but the deadline was only checked after a line arrived, and non-SSE bodies
+  were read with `readAllBytes()`, which has no deadline at all — so a server that sent the
+  response headers and then nothing (no response, no keep-alives) could still block a test for
+  as long as it held the socket; the request-level timeout covers headers only. Bodies are now
+  read on a separate thread and awaited with the remaining time, so the timeout fires on its
+  own. A response landing right at the deadline is no longer discarded either, and an interrupt
+  while waiting is reported as an interrupt rather than as the server's timeout. (#18)
 - **`close()` no longer hangs on a session `DELETE` whose body never ends**, and it re-sets the
   interrupt flag when interrupted instead of silently swallowing it — the guard in 0.6.0 ran
   after `InterruptedException` had already cleared the flag, so it could never fire. (#18)
+- **An empty plain-JSON response body now fails the request.** It used to parse to a missing
+  node, which made accessors like `listTools()` return nothing instead of failing.
 
 ## 0.6.0 — 2026-08-26
 
