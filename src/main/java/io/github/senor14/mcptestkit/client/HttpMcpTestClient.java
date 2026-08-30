@@ -113,21 +113,30 @@ public final class HttpMcpTestClient extends AbstractMcpTestClient {
     /**
      * Consumes an SSE body line by line, answering interleaved server requests and
      * recording notifications, and returns as soon as the response with {@code id}
-     * arrives — the stream is then closed by the caller, open or not. A deadline
-     * bounds the wait so a server that never sends the response fails the test with
-     * a message instead of hanging the build (the request-level timeout only covers
-     * response headers, not body streaming).
+     * arrives — the stream is then closed by the caller, open or not. The wait is bounded
+     * by the client timeout independently of whether the server keeps sending bytes: lines
+     * are read on a separate thread and polled with the remaining time, so a stream that
+     * goes completely silent fails the test with a message instead of hanging the build
+     * (the request-level timeout only covers response headers, not body streaming).
      */
     private JsonNode readSseUntilResponse(java.io.InputStream body, long id, String method) throws IOException {
-        java.io.BufferedReader reader = new java.io.BufferedReader(
-                new java.io.InputStreamReader(body, java.nio.charset.StandardCharsets.UTF_8));
+        SseLines lines = SseLines.start(body);
         long deadline = System.nanoTime() + timeout.toNanos();
-        String line;
-        while ((line = reader.readLine()) != null) {
-            if (System.nanoTime() > deadline) {
-                break;
+        while (true) {
+            long remaining = deadline - System.nanoTime();
+            SseLines.Item item = remaining > 0 ? lines.poll(remaining) : null;
+            if (item == null) {
+                throw new IllegalStateException("SSE stream from " + endpoint + " exceeded the "
+                        + timeout.toSeconds() + "s timeout without a response to " + method);
             }
-            String stripped = line.strip();
+            if (item.error != null) {
+                throw item.error;
+            }
+            if (item.line == null) {
+                throw new IllegalStateException("SSE stream from " + endpoint
+                        + " ended without a response to " + method);
+            }
+            String stripped = item.line.strip();
             if (!stripped.startsWith("data:")) {
                 continue;
             }
@@ -136,9 +145,55 @@ public final class HttpMcpTestClient extends AbstractMcpTestClient {
                 return message;
             }
         }
-        throw new IllegalStateException("SSE stream from " + endpoint + " "
-                + (line == null ? "ended" : "exceeded the " + timeout.toSeconds() + "s timeout")
-                + " without a response to " + method);
+    }
+
+    /**
+     * Reads an SSE body on a daemon thread and hands lines over through a queue, so the
+     * caller can wait with a deadline. Closing the body (which the caller does on every
+     * exit path) ends the reader.
+     */
+    private static final class SseLines {
+        static final class Item {
+            final String line;      // null = end of stream
+            final IOException error; // non-null = read failed
+
+            Item(String line, IOException error) {
+                this.line = line;
+                this.error = error;
+            }
+        }
+
+        private final java.util.concurrent.BlockingQueue<Item> queue =
+                new java.util.concurrent.LinkedBlockingQueue<>();
+
+        static SseLines start(java.io.InputStream body) {
+            SseLines lines = new SseLines();
+            java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(body, java.nio.charset.StandardCharsets.UTF_8));
+            Thread reader0 = new Thread(() -> {
+                try {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        lines.queue.offer(new Item(line, null));
+                    }
+                    lines.queue.offer(new Item(null, null));
+                } catch (IOException e) {
+                    lines.queue.offer(new Item(null, e));
+                }
+            }, "mcp-testkit-sse-reader");
+            reader0.setDaemon(true);
+            reader0.start();
+            return lines;
+        }
+
+        Item poll(long nanos) {
+            try {
+                return queue.poll(nanos, java.util.concurrent.TimeUnit.NANOSECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return null;
+            }
+        }
     }
 
     private static String readAll(java.io.InputStream body) throws IOException {
@@ -151,13 +206,19 @@ public final class HttpMcpTestClient extends AbstractMcpTestClient {
             listeningStream.cancel(true);
         }
         if (sessionId != null) {
+            // Older-revision servers keep session state; politely terminate it. The wait is
+            // bounded by the client timeout: the request-level timeout covers headers only,
+            // and a server that answers DELETE with a body it never ends must not hang close().
+            CompletableFuture<HttpResponse<Void>> delete =
+                    http.sendAsync(builder().DELETE().build(), HttpResponse.BodyHandlers.discarding());
             try {
-                // Older-revision servers keep session state; politely terminate it.
-                http.send(builder().DELETE().build(), HttpResponse.BodyHandlers.discarding());
-            } catch (IOException | InterruptedException ignored) {
-                if (Thread.currentThread().isInterrupted()) {
-                    Thread.currentThread().interrupt();
-                }
+                delete.get(timeout.toNanos(), java.util.concurrent.TimeUnit.NANOSECONDS);
+            } catch (InterruptedException e) {
+                delete.cancel(true);
+                Thread.currentThread().interrupt();
+            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException ignored) {
+                // A failed or hanging session DELETE is not a test failure.
+                delete.cancel(true);
             }
         }
     }

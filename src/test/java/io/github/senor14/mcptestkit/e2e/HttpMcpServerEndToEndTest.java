@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -76,6 +77,61 @@ class HttpMcpServerEndToEndTest {
             assertTrue(elapsedMs < 2_000,
                     "should return on the response event while the stream is still open; took "
                             + elapsedMs + " ms against a 4s hold");
+        }
+    }
+
+    @Test
+    void failsWithinTheTimeoutWhenTheStreamGoesSilent() throws Exception {
+        // A server that sends the response headers and then nothing at all — no response,
+        // no keep-alives. The deadline must fire on its own; a reader that only checks it
+        // after a line arrives would block for as long as the server holds the socket.
+        try (SampleHttpMcpServer server = new SampleHttpMcpServer(true, false, 0, 6_000, 0);
+             HttpMcpTestClient client = HttpMcpTestClient.connect(
+                     URI.create(server.endpoint()), Map.of(), Duration.ofSeconds(1))) {
+            long start = System.nanoTime();
+            IllegalStateException failure = assertThrows(IllegalStateException.class, client::listTools);
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+            assertTrue(failure.getMessage().contains("exceeded the 1s timeout"),
+                    "should report the timeout, got: " + failure.getMessage());
+            assertTrue(elapsedMs < 3_000,
+                    "should fail at the 1s deadline, not when the server closes after 6s; took "
+                            + elapsedMs + " ms");
+        }
+    }
+
+    @Test
+    void closeReturnsWithinTheTimeoutWhenTheSessionDeleteNeverEnds() throws Exception {
+        // The session DELETE is answered with headers and a body that never ends. The
+        // request-level timeout covers headers only, so close() must bound the wait itself.
+        try (SampleHttpMcpServer server = new SampleHttpMcpServer(false, true, 0, 0, 6_000)) {
+            HttpMcpTestClient client = HttpMcpTestClient.connect(
+                    URI.create(server.endpoint()), Map.of(), Duration.ofSeconds(1));
+            long start = System.nanoTime();
+            client.close();
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+            assertTrue(server.sessionWasDeleted(), "close() should still attempt the DELETE");
+            assertTrue(elapsedMs < 3_000, "close() should give up at the 1s timeout; took " + elapsedMs + " ms");
+        }
+    }
+
+    @Test
+    void closeRestoresTheInterruptFlagWhenInterrupted() throws Exception {
+        // Catching InterruptedException clears the flag; close() must set it again so the
+        // caller (a test runner shutting down, say) still sees the interrupt.
+        try (SampleHttpMcpServer server = new SampleHttpMcpServer(false, true, 0, 0, 6_000)) {
+            HttpMcpTestClient client = HttpMcpTestClient.connect(
+                    URI.create(server.endpoint()), Map.of(), TIMEOUT);
+            java.util.concurrent.atomic.AtomicBoolean flagAfterClose = new java.util.concurrent.atomic.AtomicBoolean();
+            Thread closer = new Thread(() -> {
+                client.close();
+                flagAfterClose.set(Thread.currentThread().isInterrupted());
+            });
+            closer.start();
+            Thread.sleep(300); // let close() block on the hanging DELETE
+            closer.interrupt();
+            closer.join(5_000);
+            assertTrue(!closer.isAlive(), "close() should return once interrupted");
+            assertTrue(flagAfterClose.get(), "close() must re-set the interrupt flag it consumed");
         }
     }
 

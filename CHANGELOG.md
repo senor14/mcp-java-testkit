@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.0 — Unreleased
+
+- **The HTTP client's timeout now holds even when the server goes completely silent.** 0.6.0
+  consumed SSE bodies event by event with a deadline, but the deadline was only checked after
+  a line arrived — a server that sent the response headers and then nothing at all (no
+  response, no keep-alives) could still block a test for as long as it held the socket. Lines
+  are now read on a separate thread and awaited with the remaining time, so the timeout fires
+  on its own. A response landing right at the deadline is no longer discarded either. (#18)
+- **`close()` no longer hangs on a session `DELETE` whose body never ends**, and it re-sets the
+  interrupt flag when interrupted instead of silently swallowing it — the guard in 0.6.0 ran
+  after `InterruptedException` had already cleared the flag, so it could never fire. (#18)
+
 ## 0.6.0 — 2026-08-26
 
 - **The HTTP client no longer hangs on servers that keep the SSE stream open.** The spec says

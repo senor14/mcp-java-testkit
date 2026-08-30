@@ -36,6 +36,13 @@ final class SampleHttpMcpServer implements AutoCloseable {
     private final boolean withSession;
     /** After writing the SSE response, hold the stream open this long (0 = close immediately). */
     private final long keepStreamOpenMillis;
+    /**
+     * For post-handshake requests in SSE mode: send the response headers and then nothing
+     * at all — no response, no keep-alives — for this long before closing (0 = off).
+     */
+    private final long silentStallMillis;
+    /** Answer session {@code DELETE} with headers and then hold the body open this long (0 = off). */
+    private final long hangDeleteMillis;
     /** Id of the server-initiated ping interleaved into SSE responses. */
     static final String PING_ID = "server-ping-http";
 
@@ -50,9 +57,16 @@ final class SampleHttpMcpServer implements AutoCloseable {
     }
 
     SampleHttpMcpServer(boolean sse, boolean withSession, long keepStreamOpenMillis) throws IOException {
+        this(sse, withSession, keepStreamOpenMillis, 0, 0);
+    }
+
+    SampleHttpMcpServer(boolean sse, boolean withSession, long keepStreamOpenMillis,
+                        long silentStallMillis, long hangDeleteMillis) throws IOException {
         this.sse = sse;
         this.withSession = withSession;
         this.keepStreamOpenMillis = keepStreamOpenMillis;
+        this.silentStallMillis = silentStallMillis;
+        this.hangDeleteMillis = hangDeleteMillis;
         this.server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         this.server.createContext("/mcp", this::handleExchange);
         this.server.start();
@@ -91,6 +105,14 @@ final class SampleHttpMcpServer implements AutoCloseable {
         try {
             if ("DELETE".equals(exchange.getRequestMethod())) {
                 sessionDeleted.set(true);
+                if (hangDeleteMillis > 0) {
+                    // Headers go out, the body never ends: a header-only timeout cannot
+                    // bound this, so close() must bound it itself.
+                    exchange.sendResponseHeaders(200, 0);
+                    handedOff = true;
+                    holdOpen(exchange, hangDeleteMillis, false);
+                    return;
+                }
                 exchange.sendResponseHeaders(204, -1);
                 return;
             }
@@ -150,6 +172,17 @@ final class SampleHttpMcpServer implements AutoCloseable {
                     interleaved += "event: message\ndata: " + MAPPER.writeValueAsString(ping) + "\n\n";
                 }
                 String sseBody = interleaved + "event: message\ndata: " + json + "\n\n";
+                if (silentStallMillis > 0 && !isInitialize) {
+                    // Headers only, then silence: no response event, no keep-alive
+                    // comments. A reader that only checks its deadline after a line
+                    // arrives can never time out here.
+                    exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
+                    exchange.sendResponseHeaders(200, 0);
+                    exchange.getResponseBody().flush();
+                    handedOff = true;
+                    holdOpen(exchange, silentStallMillis, false);
+                    return;
+                }
                 if (keepStreamOpenMillis > 0 && !isInitialize) {
                     // The spec says servers SHOULD close the stream after the response;
                     // this mode imitates the ones that keep it open with keep-alives
@@ -161,22 +194,7 @@ final class SampleHttpMcpServer implements AutoCloseable {
                     out.write(sseBody.getBytes(StandardCharsets.UTF_8));
                     out.flush();
                     handedOff = true;
-                    Thread holder = new Thread(() -> {
-                        try {
-                            long end = System.currentTimeMillis() + keepStreamOpenMillis;
-                            while (System.currentTimeMillis() < end) {
-                                Thread.sleep(250);
-                                out.write(": keep-alive\n\n".getBytes(StandardCharsets.UTF_8));
-                                out.flush();
-                            }
-                        } catch (Exception ignored) {
-                            // client closed the connection first — expected
-                        } finally {
-                            exchange.close();
-                        }
-                    });
-                    holder.setDaemon(true);
-                    holder.start();
+                    holdOpen(exchange, keepStreamOpenMillis, true);
                     return;
                 }
                 respond(exchange, 200, "text/event-stream", sseBody);
@@ -188,6 +206,33 @@ final class SampleHttpMcpServer implements AutoCloseable {
                 exchange.close();
             }
         }
+    }
+
+    /**
+     * Keeps a chunked response body open for {@code millis} on a daemon thread, writing SSE
+     * keep-alive comments every 250ms when {@code keepAlives} is set and nothing at all
+     * otherwise, then closes the exchange.
+     */
+    private static void holdOpen(HttpExchange exchange, long millis, boolean keepAlives) {
+        OutputStream out = exchange.getResponseBody();
+        Thread holder = new Thread(() -> {
+            try {
+                long end = System.currentTimeMillis() + millis;
+                while (System.currentTimeMillis() < end) {
+                    Thread.sleep(250);
+                    if (keepAlives) {
+                        out.write(": keep-alive\n\n".getBytes(StandardCharsets.UTF_8));
+                        out.flush();
+                    }
+                }
+            } catch (Exception ignored) {
+                // client closed the connection first — expected
+            } finally {
+                exchange.close();
+            }
+        });
+        holder.setDaemon(true);
+        holder.start();
     }
 
     private static void respond(HttpExchange exchange, int status, String contentType, String body)
