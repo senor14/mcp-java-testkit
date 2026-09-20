@@ -3,7 +3,8 @@ package io.github.senor14.mcptestkit.e2e;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.SpringBootConfiguration;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -16,8 +17,13 @@ import java.io.IOException;
  * Minimal Spring Boot app exposing the sample MCP server ({@link SampleMcpLogic}) at
  * {@code POST /mcp}, used to test the {@code spring:} URL scheme end-to-end without
  * depending on any MCP SDK.
+ *
+ * <p>Uses {@code @SpringBootConfiguration} + {@code @EnableAutoConfiguration} instead of
+ * {@code @SpringBootApplication} so this context does not component-scan the {@code e2e}
+ * package and pick up the Spring AI sample apps.
  */
-@SpringBootApplication
+@SpringBootConfiguration
+@EnableAutoConfiguration
 @RestController
 public class SampleSpringMcpApp {
 
