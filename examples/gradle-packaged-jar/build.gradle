@@ -1,0 +1,38 @@
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.22.2'
+    testImplementation 'io.github.senor14:mcp-java-testkit:0.7.0'
+    testImplementation platform('org.junit:junit-bom:5.14.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 17
+    options.encoding = 'UTF-8'
+}
+
+tasks.jar {
+    archiveFileName = 'gradle-packaged-jar.jar'
+    manifest {
+        attributes 'Main-Class': 'example.GreetingServer'
+    }
+    // Include Jackson so the server can run with just java -jar.
+    from { configurations.runtimeClasspath.collect { zipTree(it) } }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    exclude 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA', '**/module-info.class'
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+
+tasks.test {
+    dependsOn tasks.jar
+    useJUnitPlatform()
+}
