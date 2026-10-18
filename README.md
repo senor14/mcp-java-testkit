@@ -107,7 +107,7 @@ class MySpringServerTest {
 }
 ```
 
-No Spring dependency is pulled in — the port lookup is reflective and only activates when you use `spring:`. It is exercised against a real Spring AI MCP server (the `spring-ai-starter-mcp-server-webmvc` starter) in [maven-tools-mcp](https://github.com/arvindand/maven-tools-mcp)'s CI, as well as against the sample server in this repo. The HTTP client speaks the 2025-11-25 Streamable HTTP transport: it echoes the negotiated revision on every post-handshake request via `MCP-Protocol-Version`, captures and echoes `Mcp-Session-Id` when a server issues one, and handles both plain JSON and SSE response modes.
+No Spring dependency is pulled in — the port lookup is reflective and only activates when you use `spring:`. It is exercised against real Spring AI MCP servers using both the `spring-ai-starter-mcp-server-webmvc` starter in [maven-tools-mcp](https://github.com/arvindand/maven-tools-mcp)'s CI and the `spring-ai-starter-mcp-server-webflux` starter in this repository, as well as against the sample server in this repo. The HTTP client speaks the 2025-11-25 Streamable HTTP transport: it echoes the negotiated revision on every post-handshake request via `MCP-Protocol-Version`, captures and echoes `Mcp-Session-Id` when a server issues one, and handles both plain JSON and SSE response modes.
 
 ## Relationship to official tooling
 
