@@ -20,3 +20,11 @@ jobs:
           java-version: ${{ matrix.java }}
           cache: maven
       - run: mvn -B test
+      - name: Test Gradle packaged-JAR example
+        if: runner.os != 'Windows'
+        working-directory: examples/gradle-packaged-jar
+        run: ./gradlew --no-daemon test
+      - name: Test Gradle packaged-JAR example on Windows
+        if: runner.os == 'Windows'
+        working-directory: examples/gradle-packaged-jar
+        run: .\gradlew.bat --no-daemon test

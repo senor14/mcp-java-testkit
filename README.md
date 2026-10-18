@@ -73,7 +73,8 @@ that is the `package` phase, which runs *after* surefire's `test` phase, so a te
 `target/*.jar` belongs under failsafe (`*IT`, `mvn verify` — and `maven-failsafe-plugin` has to be
 bound in your pom; it is not part of the default lifecycle, and surefire silently skips `*IT`
 classes). With Gradle, make the test task depend on whichever task builds the jar (`jar` or
-`bootJar`). To stay inside the plain `test` run instead: a Spring Boot server can use the `spring:`
+`bootJar`); see the [packaged-JAR Gradle example](examples/gradle-packaged-jar). To stay inside
+the plain `test` run instead: a Spring Boot server can use the `spring:`
 mode below, and any server can be launched straight from the test classpath, no jar needed —
 `command = {"${java.home}/bin/java", "-cp", "${java.class.path}", "com.example.MyServerMain"}`
 (`${...}` expands system properties; this repo's own end-to-end test runs that way).
